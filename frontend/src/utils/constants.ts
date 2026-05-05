@@ -1,5 +1,14 @@
 // Role-based permission map
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
+  user: ['view_dashboard'],
+  enterprise: [
+    'view_dashboard', 'view_reports', 'view_snapshots', 'view_payroll', 'run_bip_report',
+    'run_etl', 'run_reconciliation', 'create_snapshot'
+  ],
+  admin: [
+    'view_dashboard', 'view_reports', 'view_snapshots', 'view_payroll', 'run_bip_report',
+    'run_etl', 'run_reconciliation', 'create_snapshot', 'manage_users', 'view_audit_log', 'change_roles'
+  ],
   Viewer: ['view_dashboard', 'view_reports', 'view_snapshots'],
   Analyst: ['view_dashboard', 'view_reports', 'view_snapshots', 'view_payroll', 'run_bip_report'],
   Engineer: [
@@ -13,6 +22,9 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 export const ROLE_COLORS: Record<string, string> = {
+  user: '#64748B',
+  enterprise: '#0F6E56',
+  admin: '#6B3FA0',
   Viewer: '#64748B',
   Analyst: '#185FA5',
   Engineer: '#0F6E56',

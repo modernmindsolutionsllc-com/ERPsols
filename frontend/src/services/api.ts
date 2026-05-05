@@ -1,9 +1,9 @@
 import type {
   ApiResponse, Snapshot, SnapshotDiff, ETLJob, Report, PayrollException,
-  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError
+  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError, SignupPayload
 } from '@/types';
 
-const MOCK_DELAY = 500;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -15,6 +15,30 @@ function mockResponse<T>(data: T, total?: number, page?: number, pages?: number)
 
 function mockError(code: string, message: string): ApiError {
   return { error: { code, message } };
+}
+
+async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T | ApiError> {
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return mockError(
+        `HTTP_${response.status}`,
+        typeof body.detail === 'string' ? body.detail : 'Request failed. Please try again.'
+      );
+    }
+
+    return body as T;
+  } catch {
+    return mockError('NETWORK_ERROR', 'Could not reach the backend API.');
+  }
 }
 
 export function hasError<T>(res: ApiResponse<T> | ApiError): res is ApiError {
@@ -216,21 +240,48 @@ let adminUsers: AdminUser[] = [
 ];
 
 export const authApi = {
-  async login(email: string, password: string): Promise<{ token: string; user: User } | ApiError> {
-    await delay(MOCK_DELAY);
-    if (email === 'viewer@company.com' && password === 'password') {
-      return { token: 'mock-jwt-viewer', user: { id: '10', name: 'Viewer User', email, role: 'Viewer' } };
-    }
-    if (email === 'analyst@company.com' && password === 'password') {
-      return { token: 'mock-jwt-analyst', user: { id: '11', name: 'Analyst User', email, role: 'Analyst' } };
-    }
-    if (email === 'engineer@company.com' && password === 'password') {
-      return { token: 'mock-jwt-engineer', user: { id: '12', name: 'Engineer User', email, role: 'Engineer' } };
-    }
-    if ((email === 'admin@company.com' && password === 'password') || (email && password)) {
-      return { token: 'mock-jwt-admin', user: { id: '1', name: 'Admin User', email: email || 'admin@company.com', role: 'Admin' } };
-    }
-    return mockError('AUTH_INVALID', 'Invalid email or password. Please try again.');
+  async signup(payload: SignupPayload): Promise<{ message: string } | ApiError> {
+    return requestJson('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async requestOtp(email: string): Promise<{ message: string } | ApiError> {
+    return requestJson('/auth/request-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async verifyOtp(email: string, otpCode: string): Promise<{ token: string; user: User } | ApiError> {
+    const result = await requestJson<{
+      access_token: string;
+      token_type: string;
+      user: {
+        id: number;
+        username: string;
+        email: string;
+        role: User['role'];
+        is_active: boolean;
+        created_at: string;
+      };
+    }>('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp_code: otpCode }),
+    });
+
+    if ('error' in result) return result;
+
+    return {
+      token: result.access_token,
+      user: {
+        id: String(result.user.id),
+        name: result.user.username,
+        email: result.user.email,
+        role: result.user.role,
+      },
+    };
   }
 };
 

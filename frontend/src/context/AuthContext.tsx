@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { AuthState } from '@/types';
+import type { AuthState, SignupPayload } from '@/types';
 import { authApi } from '@/services/api';
 import { toast } from 'sonner';
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<boolean>;
+  requestOtp: (email: string) => Promise<boolean>;
+  verifyOtp: (email: string, otpCode: string) => Promise<boolean>;
+  signup: (payload: SignupPayload) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -74,14 +76,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [state.isAuthenticated]);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    const result = await authApi.login(email, password);
+  const requestOtp = useCallback(async (email: string): Promise<boolean> => {
+    const result = await authApi.requestOtp(email);
+    if ('error' in result) {
+      toast.error(result.error.message);
+      return false;
+    }
+    toast.success(result.message);
+    return true;
+  }, []);
+
+  const verifyOtp = useCallback(async (email: string, otpCode: string): Promise<boolean> => {
+    const result = await authApi.verifyOtp(email, otpCode);
     if ('error' in result) {
       toast.error(result.error.message);
       return false;
     }
     setState({ user: result.user, token: result.token, isAuthenticated: true });
-    toast.success(`Welcome back, ${result.user.name}`);
+    toast.success(`Welcome, ${result.user.name}`);
+    return true;
+  }, []);
+
+  const signup = useCallback(async (payload: SignupPayload): Promise<boolean> => {
+    const result = await authApi.signup(payload);
+    if ('error' in result) {
+      toast.error(result.error.message);
+      return false;
+    }
+    toast.success(result.message);
     return true;
   }, []);
 
@@ -92,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, requestOtp, verifyOtp, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

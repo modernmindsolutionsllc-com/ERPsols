@@ -1,12 +1,19 @@
 // Types for MigrateOS
 
-export type UserRole = 'Viewer' | 'Analyst' | 'Engineer' | 'Admin';
+export type UserRole = 'user' | 'enterprise' | 'admin' | 'Viewer' | 'Analyst' | 'Engineer' | 'Admin';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+}
+
+export interface SignupPayload {
+  username: string;
+  email: string;
+  password: string;
+  role: 'user' | 'enterprise' | 'admin';
 }
 
 export interface AuthState {
