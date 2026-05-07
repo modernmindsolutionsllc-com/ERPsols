@@ -88,6 +88,17 @@ export interface AdminUser {
   status: 'Active' | 'Inactive';
 }
 
+export interface ACPUser {
+  id: number;
+  email: string;
+  username: string;
+  role: string;
+  created_at: string;
+  last_active_at: string | null;
+  total_active_seconds: number;
+  is_restricted: boolean;
+}
+
 export interface DashboardMetrics {
   recordsMigrated: { value: number; change: number };
   validationPassRate: { value: number; change: number };

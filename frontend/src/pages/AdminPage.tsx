@@ -3,23 +3,12 @@ import { adminApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { formatActiveTime, formatLastActive } from '@/utils/formatters';
 import { toast } from 'sonner';
-import type { ApiError } from '@/types';
+import type { ACPUser, ApiError } from '@/types';
 import {
   Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw
 } from 'lucide-react';
 
 // ── Types for the real backend ACP response ───────────────────────────────────
-
-interface ACPUser {
-  id: number;
-  email: string;
-  username: string;
-  role: string;
-  created_at: string;
-  last_active_at: string | null;
-  total_active_seconds: number;
-  is_restricted: boolean;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +52,7 @@ export function AdminPage() {
       toast.error(res.error.message);
       setUsers([]);
     } else {
-      setUsers(res as ACPUser[]);
+      setUsers(res);
     }
     setLoading(false);
   }, [roleFilter, search]);

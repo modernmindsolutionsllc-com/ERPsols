@@ -1,9 +1,9 @@
 import type {
   ApiResponse, Snapshot, SnapshotDiff, ETLJob, Report, PayrollException,
-  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError, SignupPayload
+  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError, SignupPayload, ACPUser
 } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -424,12 +424,12 @@ export const payrollApi = {
 
 export const adminApi = {
   /** Fetch all users from the real backend ACP endpoint */
-  async getUsers(role?: string, search?: string): Promise<AdminUser[] | ApiError> {
+  async getUsers(role?: string, search?: string): Promise<ACPUser[] | ApiError> {
     const params = new URLSearchParams();
     if (role) params.set('role', role);
     if (search) params.set('search', search);
     const qs = params.toString();
-    return authenticatedJson<AdminUser[]>(`/api/v1/admin/users${qs ? '?' + qs : ''}`);
+    return authenticatedJson<ACPUser[]>(`/api/v1/admin/users${qs ? '?' + qs : ''}`);
   },
 
   /** Admin kill-switch: toggle is_restricted on a user */
@@ -498,10 +498,8 @@ export const trackingApi = {
 
     if (!token) return;
 
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080';
-
     try {
-      fetch(`${baseUrl}/api/v1/tracking/disconnect`, {
+      fetch(`${API_BASE_URL}/api/v1/tracking/disconnect`, {
         method: 'POST',
         keepalive: true,
         headers: {
