@@ -8,9 +8,76 @@ import { toast } from 'sonner';
 import { hasError } from '@/services/api';
 import type { Report } from '@/types';
 import {
-  BarChart3, X, Download
+  BarChart3, X, Download, TrendingUp, FileText, Activity,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+function ToolWelcomeBanner() {
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl mb-8"
+      style={{ background: 'linear-gradient(135deg, #6B3F05 0%, #9C5A0A 50%, #BA7517 100%)' }}
+    >
+      <div
+        className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full opacity-25"
+        style={{ background: 'radial-gradient(circle, #FCD34D 0%, transparent 70%)' }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+        }}
+      />
+      <div className="pointer-events-none absolute -bottom-4 -right-4 opacity-10">
+        <TrendingUp size={180} strokeWidth={0.8} className="text-white" />
+      </div>
+
+      <div className="relative z-10 px-7 py-8 lg:px-10 lg:py-10">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+          <div
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            <BarChart3 size={26} className="text-white" strokeWidth={1.5} />
+          </div>
+          <div className="flex-1">
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2 tracking-wide"
+              style={{ background: 'rgba(252,211,77,0.15)', color: '#FCD34D' }}
+            >
+              Analytics
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white leading-tight">
+              BIP Reporting Tool
+            </h1>
+            <p className="mt-1 text-sm sm:text-base font-medium" style={{ color: '#FCD34D' }}>
+              ETL Performance &amp; Audit Reports
+            </p>
+            <p className="mt-2 text-sm text-white/55 max-w-2xl leading-relaxed">
+              Monitor ETL throughput, data quality scores, and schema drift events. Generate Oracle BIP-compatible reports in PDF or CSV format for compliance audits.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {[
+            { icon: Activity, label: 'ETL Performance Metrics' },
+            { icon: FileText, label: 'PDF & CSV Export' },
+            { icon: TrendingUp, label: 'Data Quality Trends' },
+          ].map(({ icon: Icon, label }) => (
+            <div
+              key={label}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <Icon size={11} />
+              {label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const performanceData = [
   { day: 'Mon', duration: 4.2 },
@@ -69,10 +136,11 @@ export function BIPReportingPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
+      <ToolWelcomeBanner />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-[#0F172A] tracking-tight">BIP Reporting</h1>
-          <p className="text-sm text-[#64748B] mt-1">ETL performance and data quality reports.</p>
+          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">Reports &amp; Analytics</h2>
+          <p className="text-sm text-[#64748B] mt-0.5">ETL performance and data quality reports.</p>
         </div>
         {canGenerate && (
           <button
