@@ -10,7 +10,7 @@ All endpoints gated behind `require_enterprise` (admin + enterprise only).
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from dependencies import require_enterprise
+from dependencies import require_tool_access
 from Schemas import BIPRequest
 
 
@@ -19,7 +19,7 @@ from Schemas import BIPRequest
 router = APIRouter(
     prefix="/api/v1/bip",
     tags=["BIP Reporting"],
-    dependencies=[Depends(require_enterprise)],  # Global RBAC gate
+    dependencies=[Depends(require_tool_access("bip_reporting"))],
 )
 
 # Mock Oracle BIP endpoint (JSONPlaceholder simulates the handshake)
@@ -31,7 +31,7 @@ _MOCK_BIP_URL = "https://jsonplaceholder.typicode.com/posts/1"
 @router.post("/generate-report")
 async def generate_report(
     body: BIPRequest,
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("bip_reporting")),
 ):
     """
     Simulate an ETL report generation request to Oracle BIP.

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db, ConfigSnapshot
-from dependencies import require_enterprise
+from dependencies import require_tool_access
 from Schemas import ConfigSnapshotCreate, ConfigSnapshotResponse
 
 
@@ -37,7 +37,7 @@ cipher = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_K
 router = APIRouter(
     prefix="/api/v1/config",
     tags=["Config Snapshot"],
-    dependencies=[Depends(require_enterprise)],  # Global RBAC gate
+    dependencies=[Depends(require_tool_access("config_snapshot"))],
 )
 
 
@@ -50,7 +50,7 @@ router = APIRouter(
 )
 def create_snapshot(
     body: ConfigSnapshotCreate,
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("config_snapshot")),
     db: Session = Depends(get_db),
 ):
     """
@@ -91,7 +91,7 @@ def create_snapshot(
 @router.get("/snapshot/{snapshot_id}", response_model=ConfigSnapshotResponse)
 def get_snapshot(
     snapshot_id: int,
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("config_snapshot")),
     db: Session = Depends(get_db),
 ):
     """

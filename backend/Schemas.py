@@ -146,6 +146,54 @@ class BIPRequest(BaseModel):
 #  ADMIN CONTROL PANEL (ACP) SCHEMAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+ToolKey = Literal["config_snapshot", "data_conversion", "payroll", "bip_reporting"]
+AssignableRole = Literal["enterprise", "user"]
+
+
+class ToolAccessResponse(BaseModel):
+    """Tool option that can be assigned from the Admin Control Panel."""
+    key: ToolKey
+    label: str
+    description: str
+
+
+class AdminUserCreateRequest(BaseModel):
+    """Admin-created account with explicit role and tool grants."""
+    email: EmailStr
+    role: AssignableRole
+    tool_access: list[ToolKey] = []
+    username: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def username_min_length_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        stripped = v.strip()
+        if len(stripped) < 3:
+            raise ValueError("Username must be at least 3 characters.")
+        return stripped
+
+    @field_validator("tool_access")
+    @classmethod
+    def unique_tool_access(cls, v: list[ToolKey]) -> list[ToolKey]:
+        return list(dict.fromkeys(v))
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """Admin update payload for role, tool grants, and restriction state."""
+    role: Optional[AssignableRole] = None
+    tool_access: Optional[list[ToolKey]] = None
+    is_restricted: Optional[bool] = None
+
+    @field_validator("tool_access")
+    @classmethod
+    def unique_tool_access_optional(cls, v: Optional[list[ToolKey]]) -> Optional[list[ToolKey]]:
+        if v is None:
+            return v
+        return list(dict.fromkeys(v))
+
+
 class UserAdminResponse(BaseModel):
     """Full user profile for the Admin Control Panel."""
     id: int
@@ -155,6 +203,7 @@ class UserAdminResponse(BaseModel):
     created_at: datetime
     total_active_seconds: int
     is_restricted: bool
+    tool_access: list[ToolKey] = []
     last_active_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

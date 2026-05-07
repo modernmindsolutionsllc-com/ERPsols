@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db, PayrollRecord
-from dependencies import require_enterprise
+from dependencies import require_tool_access
 from Schemas import PayrollUpload, PayrollResponse
 
 
@@ -37,7 +37,7 @@ cipher = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_K
 router = APIRouter(
     prefix="/api/v1/payroll",
     tags=["Payroll Reconciliation"],
-    dependencies=[Depends(require_enterprise)],  # Global RBAC gate
+    dependencies=[Depends(require_tool_access("payroll"))],
 )
 
 
@@ -46,7 +46,7 @@ router = APIRouter(
 @router.post("/upload", response_model=PayrollResponse, status_code=status.HTTP_201_CREATED)
 def upload_payroll(
     body: PayrollUpload,
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("payroll")),
     db: Session = Depends(get_db),
 ):
     """
@@ -88,7 +88,7 @@ def upload_payroll(
 @router.get("/reconcile/{record_id}")
 def reconcile_payroll(
     record_id: int,
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("payroll")),
     db: Session = Depends(get_db),
 ):
     """

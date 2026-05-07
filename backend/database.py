@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
     event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -30,6 +31,15 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 DB_PATH = os.getenv("DB_PATH", "app.db")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+
+
+def _bootstrap_admin_emails() -> list[str]:
+    raw_emails = os.getenv("BOOTSTRAP_ADMIN_EMAILS", "")
+    return [
+        email.strip().lower()
+        for email in raw_emails.split(",")
+        if email.strip()
+    ]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -95,8 +105,22 @@ class User(Base):
     last_active_at       = Column(DateTime(timezone=True), nullable=True)
 
     role_rel        = relationship("Role", back_populates="users")
+    tool_access     = relationship("UserToolAccess", back_populates="user", cascade="all, delete-orphan")
     snapshots       = relationship("ConfigSnapshot", back_populates="owner")
     payroll_records = relationship("PayrollRecord", back_populates="owner")
+
+
+class UserToolAccess(Base):
+    __tablename__ = "user_tool_access"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tool_key", name="uq_user_tool_access_user_tool"),
+    )
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    user_id  = Column(Integer, ForeignKey("users.id"), nullable=False)
+    tool_key = Column(String, nullable=False)
+
+    user = relationship("User", back_populates="tool_access")
 
 
 class ConfigSnapshot(Base):
@@ -196,6 +220,16 @@ def init_db():
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
             pass  # Column already exists — skip silently
+
+    admin_emails = _bootstrap_admin_emails()
+    if admin_emails:
+        cursor.execute("SELECT id FROM roles WHERE name = ?", ("admin",))
+        admin_role = cursor.fetchone()
+        if admin_role:
+            cursor.executemany(
+                "UPDATE users SET role_id = ? WHERE lower(email) = ?",
+                [(admin_role["id"], email) for email in admin_emails],
+            )
 
     conn.commit()
     conn.close()

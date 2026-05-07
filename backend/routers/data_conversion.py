@@ -13,13 +13,13 @@ import io
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from dependencies import require_enterprise
+from dependencies import require_tool_access
 
 
 router = APIRouter(
     prefix="/api/v1/data",
     tags=["Data Conversion"],
-    dependencies=[Depends(require_enterprise)],  # Global RBAC gate
+    dependencies=[Depends(require_tool_access("data_conversion"))],
 )
 
 # Allowed file extensions
@@ -47,7 +47,7 @@ def _get_extension(filename: str | None) -> str:
 @router.post("/upload")
 async def upload_and_clean(
     file: UploadFile = File(...),
-    current_user: dict = Depends(require_enterprise),
+    current_user: dict = Depends(require_tool_access("data_conversion")),
 ):
     """
     Upload a `.csv` or `.json` file for automated data cleaning.
