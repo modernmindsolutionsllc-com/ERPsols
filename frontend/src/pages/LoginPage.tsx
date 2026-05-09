@@ -41,15 +41,13 @@ export function LoginPage() {
     event.preventDefault();
     setError('');
     setLoading(true);
-    const result = await requestOtp(email.trim());
+    const success = await requestOtp(email.trim());
     setLoading(false);
 
-    if (result === 'sent') {
+    if (success) {
       setStep('otp');
       setOtpCode('');
-    } else if (result === 'failed') {
-      // Only show the inline banner for genuine failures (wrong email, backend down, etc.)
-      // 'restricted' is handled by the toast in AuthContext — no inline banner needed.
+    } else {
       setError('Could not send the login code. Check the email and backend connection.');
     }
   };
@@ -150,9 +148,8 @@ export function LoginPage() {
                     setMode('signin');
                     setError('');
                   }}
-                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                    mode === 'signin' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
+                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'signin' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
+                    }`}
                 >
                   Sign in
                 </button>
@@ -162,9 +159,8 @@ export function LoginPage() {
                     setMode('signup');
                     setError('');
                   }}
-                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                    mode === 'signup' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
+                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'signup' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
+                    }`}
                 >
                   Sign up
                 </button>

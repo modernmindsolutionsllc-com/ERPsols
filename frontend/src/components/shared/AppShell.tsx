@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   X,
+  Gem,
 } from 'lucide-react';
 import { ROLE_COLORS } from '@/utils/constants';
 
@@ -31,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const isAdmin = usePermission('manage_users');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   const isBaseUser = user?.role === 'user';
 
@@ -126,6 +128,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Subscription button — only for base 'user' role */}
+            {isBaseUser && (
+              <button
+                onClick={() => setSubscribeOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 outline-none cursor-pointer hover:scale-105 active:scale-95"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(109,40,217,0.30) 0%, rgba(168,85,247,0.24) 100%)',
+                  border: '1px solid rgba(168,85,247,0.55)',
+                  color: '#E9D5FF',
+                  boxShadow: '0 0 12px rgba(168,85,247,0.35)',
+                }}
+                title="View subscription & available tools"
+              >
+                <Gem size={13} className="text-purple-300" />
+                Subscription
+              </button>
+            )}
+
             {user && (
               <>
                 <span
@@ -154,7 +174,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      <SubscribeModal />
+      {/* Enterprise upsell modal — auto-shows once per login, also openable from navbar button */}
+      <SubscribeModal
+        externalOpen={subscribeOpen}
+        onExternalOpenChange={setSubscribeOpen}
+      />
     </div>
   );
 }
+

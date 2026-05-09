@@ -4,7 +4,7 @@ import { authApi } from '@/services/api';
 import { toast } from 'sonner';
 
 interface AuthContextType extends AuthState {
-  requestOtp: (email: string) => Promise<'sent' | 'restricted' | 'failed'>;
+  requestOtp: (email: string) => Promise<boolean>;
   verifyOtp: (email: string, otpCode: string) => Promise<{ token: string; user: User } | null>;
   refreshUser: () => Promise<User | null>;
   signup: (payload: SignupPayload) => Promise<boolean>;
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [state.isAuthenticated]);
 
-  const requestOtp = useCallback(async (email: string): Promise<'sent' | 'restricted' | 'failed'> => {
+  const requestOtp = useCallback(async (email: string): Promise<boolean> => {
     const result = await authApi.requestOtp(email);
     if ('error' in result) {
       if (result.error.message === 'ACCOUNT_RESTRICTED') {
@@ -86,14 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           '🚫 Your account has been blocked. Please contact the support team.',
           { duration: 6000 }
         );
-        return 'restricted';
       } else {
         toast.error(result.error.message);
-        return 'failed';
       }
+      return false;
     }
     toast.success(result.message);
-    return 'sent';
+    return true;
   }, []);
 
   const verifyOtp = useCallback(async (email: string, otpCode: string): Promise<{ token: string; user: User } | null> => {
@@ -148,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     setState({ user: null, token: null, isAuthenticated: false });
     sessionStorage.removeItem('migrateos_auth');
+    sessionStorage.removeItem('migrateos_sub_shown'); // reset so modal shows again on next login
     toast.info('Signed out successfully');
   }, []);
 
