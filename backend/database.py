@@ -160,6 +160,8 @@ class OracleCredential(Base):
 
     id                       = Column(Integer, primary_key=True, autoincrement=True)
     user_id                  = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    env_name                 = Column(String, nullable=False, default="Demo Oracle Fusion")
+    oracle_url               = Column(String, nullable=False, default="https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com")
     oracle_username          = Column(String, nullable=False)
     encrypted_oracle_password = Column(LargeBinary, nullable=False)
     created_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -174,8 +176,12 @@ class BipReportConfig(Base):
 
     id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
     module      = Column(String, index=True, nullable=False)
+    sub_module  = Column(String, nullable=True)
     report_name = Column(String, unique=True, index=True, nullable=False)
-    sql_query   = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    sql_query   = Column(Text, nullable=True)
+    encrypted_sql_query = Column(LargeBinary, nullable=True)
+    is_active   = Column(Boolean, nullable=False, default=True)
     created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -196,6 +202,14 @@ def get_db():
 # ═══════════════════════════════════════════════════════════════════════════════
 #  INITIALISATION
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _safe_alter_columns(cursor: sqlite3.Cursor, table_name: str, columns: list[tuple[str, str]]) -> None:
+    for col_name, col_type in columns:
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
 
 def init_db():
     """
@@ -268,6 +282,21 @@ def init_db():
 
     # ── Phase 2: SQLAlchemy create new tables (config_snapshots, etc.) ─────────
     Base.metadata.create_all(bind=engine)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    _safe_alter_columns(cursor, "oracle_credentials", [
+        ("env_name", "TEXT DEFAULT 'Demo Oracle Fusion'"),
+        ("oracle_url", "TEXT DEFAULT 'https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com'"),
+    ])
+    _safe_alter_columns(cursor, "bip_report_configs", [
+        ("sub_module", "TEXT"),
+        ("description", "TEXT"),
+        ("encrypted_sql_query", "BLOB"),
+        ("is_active", "INTEGER DEFAULT 1"),
+    ])
+    conn.commit()
+    conn.close()
 
     print("Database initialised successfully.")
 

@@ -76,7 +76,30 @@ def fetch_bi_session_token(soap_url, username, password):
     }
 
     resp = requests.post(soap_url, data=soap_body, headers=headers)
-    resp.raise_for_status()
+
+    # Parse SOAP Fault *before* raise_for_status so we can surface the real Oracle error message.
+    # Oracle BIP returns HTTP 500 for auth failures; the real reason is inside <faultstring>.
+    if not resp.ok:
+        fault_msg = None
+        try:
+            root = ET.fromstring(resp.text)
+            # Try with explicit namespace URI
+            fault_el = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
+            # Fallback: try without namespace (some servers omit it)
+            if fault_el is None:
+                fault_el = root.find(".//faultstring")
+            if fault_el is not None and fault_el.text:
+                fault_msg = fault_el.text.strip()
+        except Exception:
+            pass
+        # Fallback: plain-text search in the raw response body
+        if not fault_msg and "<faultstring>" in resp.text:
+            start = resp.text.index("<faultstring>") + len("<faultstring>")
+            end = resp.text.index("</faultstring>", start)
+            fault_msg = resp.text[start:end].strip()
+        if fault_msg:
+            raise RuntimeError(fault_msg)
+        resp.raise_for_status()
 
     root = ET.fromstring(resp.text)
     ns = {
@@ -86,7 +109,7 @@ def fetch_bi_session_token(soap_url, username, password):
 
     token_el = root.find(".//ns:loginReturn", ns)
     if token_el is None or not token_el.text:
-        raise RuntimeError("❌ Unable to fetch BI session token")
+        raise RuntimeError("Unable to fetch BI session token. Please verify Oracle credentials.")
 
     return token_el.text
 
@@ -464,6 +487,7 @@ def friendly_bi_error(err: Exception | str) -> str:
     into clear, user-friendly messages.
     """
     msg = str(err).lower()
+    original = str(err)
 
     # --------------------------------------------------
     # 1. Timeouts (MOST IMPORTANT — must be first)
@@ -473,9 +497,7 @@ def friendly_bi_error(err: Exception | str) -> str:
         or "timeout" in msg
         or "timed out" in msg
     ):
-        return (
-            "Query timed out."
-        )
+        return "Query timed out. The Oracle BI server took too long to respond."
 
     # --------------------------------------------------
     # 2. Network / connectivity issues
@@ -487,46 +509,51 @@ def friendly_bi_error(err: Exception | str) -> str:
         or "connection refused" in msg
         or "name or service not known" in msg
     ):
+        return "Cannot connect to Oracle BI server. Please check the server URL in your Oracle credentials."
+
+    # --------------------------------------------------
+    # 3. Account locked (Oracle locks after repeated failed logins)
+    # --------------------------------------------------
+    if "locked" in msg or "account is locked" in msg or "user is locked" in msg:
         return (
-            "Cannot connect to BI server."
+            "Your Oracle account has been locked due to too many failed login attempts. "
+            "Please contact your Oracle administrator to unlock the account "
+            "(Caleb.Gavin on fa-etaj-saasfademo1.ds-fa.oraclepdemos.com), "
+            "then reconnect with the correct credentials."
         )
 
     # --------------------------------------------------
-    # 3. Authentication / authorization
+    # 4. Invalid credentials (Oracle SOAP fault message)
+    # --------------------------------------------------
+    if "invalid username or password" in msg or "failed to log into bi publisher" in msg:
+        return "Invalid Oracle username or password. Please reconnect Oracle with correct credentials."
+
+    # --------------------------------------------------
+    # 4. Authentication / authorization
     # --------------------------------------------------
     if "401" in msg or "unauthorized" in msg:
-        return (
-            "Authentication failed."
-        )
+        return "Oracle authentication failed. Please check your credentials."
 
     if "403" in msg or "accessdenied" in msg:
-        return (
-            "Access denied."
-        )
+        return "Access denied by Oracle. Your account may not have BIP access."
 
     # --------------------------------------------------
-    # 4. BI Publisher internal/server errors
+    # 5. BI Publisher internal/server errors
     # --------------------------------------------------
     if (
         "500" in msg
         or "internal server error" in msg
         or "<response [500]>" in msg
     ):
-        return (
-            "BI server error."
-        )
+        return "Oracle BI server returned an internal error (500). Please try again later."
 
     # --------------------------------------------------
-    # 5. SOAP-level faults
+    # 6. SOAP-level faults — return the raw message if readable
     # --------------------------------------------------
     if "soap fault" in msg or "faultcode" in msg:
-        return (
-            "BI returned invalid API response."
-        )
+        return f"Oracle BI API error: {original[:200]}"
 
     # --------------------------------------------------
-    # 6. Fallback
+    # 7. Fallback — return the raw message so it is actionable
     # --------------------------------------------------
-    return (
-        "Unexpected BI error."
-    )
+    return f"Oracle BI error: {original[:200]}"

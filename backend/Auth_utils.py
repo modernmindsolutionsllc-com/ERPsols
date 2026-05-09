@@ -161,12 +161,28 @@ def send_otp_email(user_email: str, otp_code: str) -> None:
     context = ssl.create_default_context()
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, user_email, msg.as_string())
+        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), context)
+    except ssl.SSLCertVerificationError as exc:
+        if os.environ.get("SMTP_ALLOW_INSECURE_TLS", "").lower() not in {"1", "true", "yes"}:
+            raise RuntimeError("SMTP TLS certificate verification failed.") from exc
+
+        insecure_context = ssl._create_unverified_context()
+        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), insecure_context)
     except smtplib.SMTPAuthenticationError as exc:
         raise RuntimeError(
             "SMTP authentication failed. Check SENDER_EMAIL and SENDER_EMAIL_PASSWORD."
         ) from exc
     except smtplib.SMTPException as exc:
         raise RuntimeError(f"Failed to send OTP email: {exc}") from exc
+
+
+def _send_smtp_email(
+    sender_email: str,
+    sender_password: str,
+    user_email: str,
+    message: str,
+    context: ssl.SSLContext,
+) -> None:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, user_email, message)

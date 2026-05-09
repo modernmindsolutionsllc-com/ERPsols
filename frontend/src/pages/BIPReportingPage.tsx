@@ -1,9 +1,29 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { usePermission, useToolAccess } from '@/hooks/usePermission';
-import { bipReportingApi, type BipReportResponse } from '@/services/api';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  BarChart3,
+  Clock,
+  Database,
+  KeyRound,
+  Loader2,
+  PlayCircle,
+  PlusCircle,
+  TerminalSquare,
+} from 'lucide-react';
+
+import { useAuth } from '@/context/AuthContext';
+import { usePermission, useToolAccess } from '@/hooks/usePermission';
+import { bipReportingApi, type BipReportResponse, type OracleStatus } from '@/services/api';
+import { CreateBipReportModal } from '@/components/CreateBipReportModal';
+import { ConnectOracleModal } from '@/components/shared/ConnectOracleModal';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -12,100 +32,124 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
-import { Loader2, PlayCircle, BarChart3, Clock, Database, PlusCircle } from 'lucide-react';
-import { format } from 'date-fns';
-import { Card } from '@/components/ui/card';
-import { CreateBipReportModal } from '@/components/CreateBipReportModal';
+
+function downloadWorkbook(blob: Blob, filePrefix: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
+  a.download = `${filePrefix}_${timestamp}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function isApiError(value: unknown): value is { error: { message: string } } {
+  return typeof value === 'object' && value !== null && 'error' in value;
+}
 
 export function BIPReportingPage() {
   const { user } = useAuth();
   const canAccess = usePermission('run_bip_report') || useToolAccess('bip_reporting');
-  
+
   const [reports, setReports] = useState<BipReportResponse[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [oracleStatus, setOracleStatus] = useState<OracleStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isRunningSql, setIsRunningSql] = useState(false);
   const [bipModalOpen, setBipModalOpen] = useState(false);
+  const [oracleModalOpen, setOracleModalOpen] = useState(false);
+  const [directModule, setDirectModule] = useState('Ad Hoc');
+  const [directReportName, setDirectReportName] = useState('Direct_SQL_Report');
+  const [directSql, setDirectSql] = useState('select 1 from dual');
 
-  // Fetch reports on mount
   useEffect(() => {
     fetchReports();
+    fetchOracleStatus();
   }, []);
 
   const fetchReports = async () => {
     setIsLoading(true);
     const res = await bipReportingApi.getBipReports();
-    if ('error' in res && res.error) {
-      toast.error((res as any).error.message || 'Failed to fetch reports.');
+    if (isApiError(res)) {
+      toast.error(res.error.message || 'Failed to fetch reports.');
     } else {
-      setReports(res as unknown as BipReportResponse[]); 
+      setReports(res);
     }
     setIsLoading(false);
   };
 
+  const fetchOracleStatus = async () => {
+    const res = await bipReportingApi.getOracleStatus();
+    if (!isApiError(res)) setOracleStatus(res);
+  };
+
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(reports.map(r => r.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
+    setSelectedIds(checked ? new Set(reports.map(r => r.id)) : new Set());
   };
 
   const handleSelectOne = (id: number, checked: boolean) => {
-    const newSet = new Set(selectedIds);
-    if (checked) newSet.add(id);
-    else newSet.delete(id);
-    setSelectedIds(newSet);
+    const next = new Set(selectedIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
   };
 
-  const handleExecute = async () => {
+  const handleExecuteSelected = async () => {
     if (selectedIds.size === 0) return;
-    
-    setIsExecuting(true);
-    const idsToRun = Array.from(selectedIds);
-    
-    toast.info('Executing in Oracle...', { id: 'oracle-exec' });
-    
-    const response = await bipReportingApi.executeBipReports(idsToRun);
-    
-    toast.dismiss('oracle-exec');
 
-    if ('error' in response && response.error) {
-      toast.error((response as any).error.message || 'Execution failed.');
+    setIsExecuting(true);
+    toast.info('Executing selected reports in Oracle...', { id: 'oracle-exec' });
+
+    const response = await bipReportingApi.executeBipReports(Array.from(selectedIds));
+
+    toast.dismiss('oracle-exec');
+    if (isApiError(response)) {
+      toast.error(response.error.message || 'Execution failed.');
     } else {
-      toast.success('Reports generated successfully! Downloading...');
-      
-      // Blob download logic
-      const blob = response as Blob;
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      
-      const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
-      a.download = `Oracle_Config_Extract_${timestamp}.xlsx`;
-      
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url); // prevent memory leak
+      toast.success('Report generated. Downloading workbook...');
+      downloadWorkbook(response, 'Oracle_Config_Extract');
     }
-    
     setIsExecuting(false);
   };
 
-  // RBAC verification
+  const handleRunDirectSql = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!directModule.trim() || !directReportName.trim() || !directSql.trim()) {
+      toast.error('Module, report name, and SQL query are required.');
+      return;
+    }
+
+    setIsRunningSql(true);
+    toast.info('Running SQL in Oracle BIP...', { id: 'direct-sql' });
+
+    const response = await bipReportingApi.executeSql({
+      module: directModule,
+      report_name: directReportName,
+      sql_query: directSql,
+    });
+
+    toast.dismiss('direct-sql');
+    if (isApiError(response)) {
+      toast.error(response.error.message || 'SQL execution failed.');
+    } else {
+      toast.success('SQL report generated. Downloading workbook...');
+      downloadWorkbook(response, directReportName || 'BIP_SQL_Report');
+    }
+    setIsRunningSql(false);
+  };
+
   if (!user) return <Navigate to="/login" />;
   if (!canAccess) return <Navigate to="/dashboard" />;
 
   const isAllSelected = reports.length > 0 && selectedIds.size === reports.length;
+  const oracleConnected = oracleStatus?.connected === true;
 
   return (
     <>
-    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-250 p-6 lg:p-8">
-      
-      {/* Header Section */}
+      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-250 p-6 lg:p-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
@@ -113,46 +157,104 @@ export function BIPReportingPage() {
               BIP Reporting Tool
             </h1>
             <p className="text-gray-500 mt-2">
-              Select available dynamic SQL configurations and execute them directly against your Oracle Fusion environment.
+              Connect Oracle, run SQL through the BIP executor, and download the generated workbook from this page.
             </p>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <Button 
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={() => setOracleModalOpen(true)}
+              variant={oracleConnected ? 'outline' : 'default'}
+              className={oracleConnected ? 'gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'gap-2 bg-[#185FA5] text-white'}
+              size="lg"
+            >
+              <KeyRound className="h-5 w-5" />
+              {oracleConnected ? 'Oracle Connected' : 'Connect Oracle'}
+            </Button>
+            <Button
               onClick={() => setBipModalOpen(true)}
               variant="outline"
               className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
               size="lg"
             >
               <PlusCircle className="h-5 w-5" />
-              New BIP Report
-            </Button>
-            
-            <Button 
-              onClick={handleExecute}
-              disabled={selectedIds.size === 0 || isExecuting}
-              className="bg-[#185FA5] hover:bg-[#0D3B6E] text-white shadow-md transition-all gap-2"
-              size="lg"
-            >
-              {isExecuting ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <PlayCircle className="h-5 w-5" />
-              )}
-              {isExecuting ? 'Executing...' : `Run Selected Reports (${selectedIds.size})`}
+              Save SQL Report
             </Button>
           </div>
         </div>
 
-        {/* Main Content Area */}
         <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
-          <div className="p-1 border-b bg-gray-50 flex items-center gap-2">
-             {/* Decorative tabs effect */}
-             <div className="px-4 py-2 text-sm font-medium text-[#185FA5] border-b-2 border-[#185FA5] bg-white rounded-t-md flex items-center gap-2">
-               <Database size={16} /> Data Models
-             </div>
+          <div className="border-b bg-gray-50 px-5 py-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
+              <TerminalSquare size={16} />
+              Run SQL Query
+            </div>
+            <span className="text-xs text-gray-500">
+              {oracleConnected ? `Connected as ${oracleStatus?.oracle_username}` : 'Oracle credentials required'}
+            </span>
           </div>
-          
+
+          <form onSubmit={handleRunDirectSql} className="p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="direct-module">Module</Label>
+                <Input
+                  id="direct-module"
+                  value={directModule}
+                  onChange={event => setDirectModule(event.target.value)}
+                  disabled={isRunningSql}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="direct-report-name">Report Name</Label>
+                <Input
+                  id="direct-report-name"
+                  value={directReportName}
+                  onChange={event => setDirectReportName(event.target.value)}
+                  disabled={isRunningSql}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="direct-sql">SQL Query</Label>
+              <Textarea
+                id="direct-sql"
+                value={directSql}
+                onChange={event => setDirectSql(event.target.value)}
+                disabled={isRunningSql}
+                className="min-h-[220px] font-mono text-sm"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                disabled={!oracleConnected || isRunningSql}
+                className="gap-2 bg-[#185FA5] hover:bg-[#0D3B6E] text-white"
+                size="lg"
+              >
+                {isRunningSql ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlayCircle className="h-5 w-5" />}
+                {isRunningSql ? 'Running SQL...' : 'Run SQL & Download'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
+          <div className="border-b bg-gray-50 px-5 py-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
+              <Database size={16} />
+              Saved Data Models
+            </div>
+            <Button
+              onClick={handleExecuteSelected}
+              disabled={selectedIds.size === 0 || isExecuting || !oracleConnected}
+              className="bg-[#185FA5] hover:bg-[#0D3B6E] text-white shadow-md transition-all gap-2"
+            >
+              {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              {isExecuting ? 'Executing...' : `Run Selected (${selectedIds.size})`}
+            </Button>
+          </div>
+
           <div className="p-0">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center h-64 text-gray-400">
@@ -163,7 +265,7 @@ export function BIPReportingPage() {
               <div className="flex flex-col items-center justify-center h-64 text-gray-400">
                 <BarChart3 className="h-12 w-12 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-gray-600">No reports found.</p>
-                <p className="text-sm mt-1">Use the "New BIP Report" button in the TopBar to add one.</p>
+                <p className="text-sm mt-1">Use Save SQL Report on this page to add one.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -171,7 +273,7 @@ export function BIPReportingPage() {
                   <TableHeader>
                     <TableRow className="bg-gray-50 hover:bg-gray-50">
                       <TableHead className="w-12 text-center">
-                        <Checkbox 
+                        <Checkbox
                           checked={isAllSelected}
                           onCheckedChange={handleSelectAll}
                           aria-label="Select all"
@@ -183,15 +285,15 @@ export function BIPReportingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {reports.map((report) => (
-                      <TableRow 
-                        key={report.id} 
+                    {reports.map(report => (
+                      <TableRow
+                        key={report.id}
                         className={`transition-colors ${selectedIds.has(report.id) ? 'bg-[#185FA5]/5' : ''}`}
                       >
                         <TableCell className="text-center">
-                          <Checkbox 
+                          <Checkbox
                             checked={selectedIds.has(report.id)}
-                            onCheckedChange={(checked) => handleSelectOne(report.id, checked as boolean)}
+                            onCheckedChange={checked => handleSelectOne(report.id, checked as boolean)}
                             aria-label={`Select ${report.report_name}`}
                           />
                         </TableCell>
@@ -217,12 +319,19 @@ export function BIPReportingPage() {
         </Card>
       </div>
 
-      {/* Create BIP Report Modal */}
+      <ConnectOracleModal
+        open={oracleModalOpen}
+        onOpenChange={open => {
+          setOracleModalOpen(open);
+          if (!open) fetchOracleStatus();
+        }}
+      />
+
       <CreateBipReportModal
         open={bipModalOpen}
-        onOpenChange={(open) => {
+        onOpenChange={open => {
           setBipModalOpen(open);
-          if (!open) fetchReports(); // refresh table after closing
+          if (!open) fetchReports();
         }}
       />
     </>

@@ -215,6 +215,8 @@ class DisconnectRequest(BaseModel):
 
 class OracleConnectRequest(BaseModel):
     """Receives raw Oracle credentials from the frontend for encryption."""
+    oracle_url: str = "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
+    env_name: str = "Demo Oracle Fusion"
     oracle_username: str
     oracle_password: str
 
@@ -224,6 +226,18 @@ class OracleConnectRequest(BaseModel):
         if not v.strip():
             raise ValueError("Oracle username cannot be empty.")
         return v.strip()
+
+    @field_validator("oracle_url")
+    @classmethod
+    def url_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Oracle URL cannot be empty.")
+        return v.strip().rstrip("/")
+
+    @field_validator("env_name")
+    @classmethod
+    def env_name_not_empty(cls, v: str) -> str:
+        return v.strip() or "Demo Oracle Fusion"
 
     @field_validator("oracle_password")
     @classmethod
@@ -236,6 +250,8 @@ class OracleConnectRequest(BaseModel):
 class OracleConnectResponse(BaseModel):
     """Confirms credential storage without leaking any secrets."""
     message: str
+    oracle_url: str
+    env_name: str
     oracle_username: str
     connected_at: datetime
 
@@ -387,6 +403,8 @@ class DisconnectRequest(BaseModel):
 
 class OracleConnectRequest(BaseModel):
     """Receives raw Oracle credentials from the frontend for encryption."""
+    oracle_url: str = "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
+    env_name: str = "Demo Oracle Fusion"
     oracle_username: str
     oracle_password: str
 
@@ -396,6 +414,18 @@ class OracleConnectRequest(BaseModel):
         if not v.strip():
             raise ValueError("Oracle username cannot be empty.")
         return v.strip()
+
+    @field_validator("oracle_url")
+    @classmethod
+    def url_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Oracle URL cannot be empty.")
+        return v.strip().rstrip("/")
+
+    @field_validator("env_name")
+    @classmethod
+    def env_name_not_empty(cls, v: str) -> str:
+        return v.strip() or "Demo Oracle Fusion"
 
     @field_validator("oracle_password")
     @classmethod
@@ -408,6 +438,8 @@ class OracleConnectRequest(BaseModel):
 class OracleConnectResponse(BaseModel):
     """Confirms credential storage without leaking any secrets."""
     message: str
+    oracle_url: str
+    env_name: str
     oracle_username: str
     connected_at: datetime
 
@@ -418,14 +450,27 @@ class OracleConnectResponse(BaseModel):
 
 class BipReportBase(BaseModel):
     module: str
+    sub_module: Optional[str] = None
     report_name: str
+    description: Optional[str] = None
+
+class BipReportCreate(BaseModel):
+    module: str
+    sub_module: Optional[str] = None
+    report_name: str
+    description: Optional[str] = None
     sql_query: str
 
-class BipReportCreate(BipReportBase):
-    pass
+    @field_validator("module", "report_name", "sql_query")
+    @classmethod
+    def required_text_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("This field cannot be empty.")
+        return v.strip()
 
 class BipReportResponse(BipReportBase):
     id: int
+    is_active: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -433,3 +478,16 @@ class BipReportResponse(BipReportBase):
 
 class ExecuteReportsRequest(BaseModel):
     report_ids: list[int]
+
+
+class DirectBipSqlRequest(BaseModel):
+    module: str = "Ad Hoc"
+    report_name: str = "Ad Hoc SQL"
+    sql_query: str
+
+    @field_validator("module", "report_name", "sql_query")
+    @classmethod
+    def required_text_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("This field cannot be empty.")
+        return v.strip()

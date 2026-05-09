@@ -555,13 +555,86 @@ export const trackingApi = {
 
 export interface BipReportCreate {
   module: string;
+  sub_module?: string;
+  report_name: string;
+  description?: string;
+  sql_query: string;
+}
+
+export interface BipReportResponse {
+  id: number;
+  module: string;
+  sub_module?: string | null;
+  report_name: string;
+  description?: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DirectBipSqlRequest {
+  module: string;
   report_name: string;
   sql_query: string;
 }
 
-export interface BipReportResponse extends BipReportCreate {
-  id: number;
-  created_at: string;
+export interface OracleStatus {
+  connected: boolean;
+  oracle_url?: string;
+  env_name?: string;
+  oracle_username?: string;
+  connected_at?: string | null;
+}
+
+export interface OracleConnectRequest {
+  oracle_url: string;
+  env_name: string;
+  oracle_username: string;
+  oracle_password: string;
+}
+
+export interface OracleConnectResponse {
+  message: string;
+  oracle_url: string;
+  env_name: string;
+  oracle_username: string;
+  connected_at: string;
+}
+
+async function authenticatedBlob(path: string, body: object): Promise<Blob | ApiError> {
+  let token: string | null = null;
+  try {
+    const saved = sessionStorage.getItem('migrateos_auth');
+    if (saved) token = JSON.parse(saved).token;
+  } catch { /* ignore parse errors */ }
+
+  if (!token) {
+    return { error: { code: 'AUTH_ERROR', message: 'No authentication token found. Please sign in.' } };
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      return {
+        error: {
+          code: `HTTP_${response.status}`,
+          message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
+        },
+      };
+    }
+
+    return await response.blob();
+  } catch {
+    return { error: { code: 'NETWORK_ERROR', message: 'Could not reach the backend API.' } };
+  }
 }
 
 export const bipReportingApi = {
@@ -571,40 +644,14 @@ export const bipReportingApi = {
       body: JSON.stringify(data),
     }),
   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
-  executeBipReports: async (reportIds: number[]): Promise<Blob | ApiError> => {
-    let token: string | null = null;
-    try {
-      const saved = sessionStorage.getItem('migrateos_auth');
-      if (saved) token = JSON.parse(saved).token;
-    } catch { /* ignore parse errors */ }
-
-    if (!token) {
-      return { error: { code: 'AUTH_ERROR', message: 'No authentication token found. Please sign in.' } };
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/bip-reports/execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ report_ids: reportIds }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        return {
-          error: {
-            code: `HTTP_${response.status}`,
-            message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
-          },
-        };
-      }
-
-      return await response.blob();
-    } catch {
-      return { error: { code: 'NETWORK_ERROR', message: 'Could not reach the backend API.' } };
-    }
-  },
+  executeBipReports: (reportIds: number[]) =>
+    authenticatedBlob('/api/v1/bip-reports/execute', { report_ids: reportIds }),
+  executeSql: (data: DirectBipSqlRequest) =>
+    authenticatedBlob('/api/v1/bip-reports/execute-sql', data),
+  getOracleStatus: () => authenticatedJson<OracleStatus>('/api/v1/integrations/oracle/status'),
+  connectOracle: (data: OracleConnectRequest) =>
+    authenticatedJson<OracleConnectResponse>('/api/v1/integrations/oracle/connect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

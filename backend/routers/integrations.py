@@ -95,12 +95,16 @@ def connect_oracle(
     now = datetime.now(timezone.utc)
 
     if existing:
+        existing.env_name = body.env_name
+        existing.oracle_url = body.oracle_url
         existing.oracle_username = body.oracle_username
         existing.encrypted_oracle_password = encrypted_pw
         existing.updated_at = now
     else:
         credential = OracleCredential(
             user_id=user_id,
+            env_name=body.env_name,
+            oracle_url=body.oracle_url,
             oracle_username=body.oracle_username,
             encrypted_oracle_password=encrypted_pw,
             created_at=now,
@@ -112,6 +116,8 @@ def connect_oracle(
 
     return OracleConnectResponse(
         message="Oracle credentials encrypted and saved successfully.",
+        oracle_url=body.oracle_url,
+        env_name=body.env_name,
         oracle_username=body.oracle_username,
         connected_at=now,
     )
@@ -135,6 +141,8 @@ def oracle_status(
     if existing:
         return {
             "connected": True,
+            "oracle_url": existing.oracle_url,
+            "env_name": existing.env_name,
             "oracle_username": existing.oracle_username,
             "connected_at": existing.updated_at.isoformat() if existing.updated_at else None,
         }
