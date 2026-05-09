@@ -17,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Integer,
+    LargeBinary,
     String,
     Text,
     DateTime,
@@ -149,9 +150,40 @@ class PayrollRecord(Base):
 
 # ── FastAPI Dependency – injectable DB session ─────────────────────────────────
 
+class OracleCredential(Base):
+    """
+    Stores Fernet-encrypted Oracle Fusion credentials.
+    The encrypted_oracle_password column holds AES-encrypted ciphertext
+    — the plain text password NEVER touches the database.
+    """
+    __tablename__ = "oracle_credentials"
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    user_id                  = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    oracle_username          = Column(String, nullable=False)
+    encrypted_oracle_password = Column(LargeBinary, nullable=False)
+    created_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                                      onupdate=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", backref="oracle_credential")
+
+
+class BipReportConfig(Base):
+    __tablename__ = "bip_report_configs"
+
+    id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    module      = Column(String, index=True, nullable=False)
+    report_name = Column(String, unique=True, index=True, nullable=False)
+    sql_query   = Column(Text, nullable=False)
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ── DB Session ─────────────────────────────────────────────────────────────────
+
 def get_db():
     """
-    Yields a SQLAlchemy session and guarantees cleanup.
+    FastAPI dependency that yields a scoped SQLAlchemy session.
     Usage in routers:  db: Session = Depends(get_db)
     """
     db = SessionLocal()

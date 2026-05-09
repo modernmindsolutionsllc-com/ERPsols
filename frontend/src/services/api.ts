@@ -513,3 +513,59 @@ export const trackingApi = {
     }
   }
 };
+
+export interface BipReportCreate {
+  module: string;
+  report_name: string;
+  sql_query: string;
+}
+
+export interface BipReportResponse extends BipReportCreate {
+  id: number;
+  created_at: string;
+}
+
+export const bipReportingApi = {
+  createBipReport: (data: BipReportCreate) =>
+    authenticatedJson<any>('/api/v1/bip-reports/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
+  executeBipReports: async (reportIds: number[]): Promise<Blob | ApiError> => {
+    let token: string | null = null;
+    try {
+      const saved = sessionStorage.getItem('migrateos_auth');
+      if (saved) token = JSON.parse(saved).token;
+    } catch { /* ignore parse errors */ }
+
+    if (!token) {
+      return { error: { code: 'AUTH_ERROR', message: 'No authentication token found. Please sign in.' } };
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/bip-reports/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ report_ids: reportIds }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        return {
+          error: {
+            code: `HTTP_${response.status}`,
+            message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
+          },
+        };
+      }
+
+      return await response.blob();
+    } catch {
+      return { error: { code: 'NETWORK_ERROR', message: 'Could not reach the backend API.' } };
+    }
+  },
+};

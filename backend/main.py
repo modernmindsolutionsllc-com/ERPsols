@@ -19,7 +19,8 @@ from routers import payroll
 from routers import bip_integration
 from routers import admin
 from routers import tracking
-
+from routers import integrations
+from routers import bip_reports
 app = FastAPI(
     title="ERPsols API",
     version="1.0.0",
@@ -69,6 +70,12 @@ app.include_router(admin.router)
 
 # Session Tracking (any authenticated user)
 app.include_router(tracking.router)
+
+# Oracle Integration (enterprise + admin)
+app.include_router(integrations.router)
+
+# BIP Reports Configuration
+app.include_router(bip_reports.router)
 
 
 # ── Health Check ───────────────────────────────────────────────────────────────
