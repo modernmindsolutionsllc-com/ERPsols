@@ -80,7 +80,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const requestOtp = useCallback(async (email: string): Promise<boolean> => {
     const result = await authApi.requestOtp(email);
     if ('error' in result) {
-      toast.error(result.error.message);
+      if (result.error.message === 'ACCOUNT_RESTRICTED') {
+        // Longer toast (+2s) with a clear account-blocked message
+        toast.error(
+          '🚫 Your account has been blocked. Please contact the support team.',
+          { duration: 6000 }
+        );
+      } else {
+        toast.error(result.error.message);
+      }
       return false;
     }
     toast.success(result.message);
@@ -90,7 +98,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifyOtp = useCallback(async (email: string, otpCode: string): Promise<{ token: string; user: User } | null> => {
     const result = await authApi.verifyOtp(email, otpCode);
     if ('error' in result) {
-      toast.error(result.error.message);
+      if (result.error.message === 'ACCOUNT_RESTRICTED') {
+        toast.error(
+          '🚫 Your account has been blocked. Please contact the support team.',
+          { duration: 6000 }
+        );
+      } else {
+        toast.error(result.error.message);
+      }
       return null;
     }
     setState({ user: result.user, token: result.token, isAuthenticated: true });

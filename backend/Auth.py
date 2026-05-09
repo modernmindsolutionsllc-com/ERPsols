@@ -91,6 +91,13 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         # Deactivated accounts get the same generic response
         return {"message": "If this email is registered, an OTP has been sent."}
 
+    # ── Guard: restricted accounts are blocked before OTP is sent ──────────────
+    if user.is_restricted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ACCOUNT_RESTRICTED",
+        )
+
     # ── Generate 6-digit OTP (cryptographically secure) ────────────────────────
     otp_code = f"{secrets.randbelow(1_000_000):06d}"
 
@@ -136,6 +143,13 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials.",
+        )
+
+    # ── Guard: account restricted (may have been restricted after OTP was sent) ─
+    if user.is_restricted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ACCOUNT_RESTRICTED",
         )
 
     # ── Guard: no OTP pending ──────────────────────────────────────────────────
