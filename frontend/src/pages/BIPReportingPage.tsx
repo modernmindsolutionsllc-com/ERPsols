@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { usePermission } from '@/hooks/usePermission';
+import { usePermission, useToolAccess } from '@/hooks/usePermission';
 import { bipReportingApi, type BipReportResponse } from '@/services/api';
 import { toast } from 'sonner';
 import {
@@ -21,7 +21,7 @@ import { CreateBipReportModal } from '@/components/CreateBipReportModal';
 
 export function BIPReportingPage() {
   const { user } = useAuth();
-  const canAccess = usePermission('run_bip_report');
+  const canAccess = usePermission('run_bip_report') || useToolAccess('bip_reporting');
   
   const [reports, setReports] = useState<BipReportResponse[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

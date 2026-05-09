@@ -59,7 +59,7 @@ function ToolRoute({ toolKey, children }: { toolKey: ToolKey; children: React.Re
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (checking) return <AppShell><div className="p-8 text-sm text-[#64748B]">Checking access...</div></AppShell>;
-  if (freshUser?.role === 'admin' || freshUser?.role === 'Admin') return <Navigate to="/admin" replace />;
+  if (freshUser?.role === 'admin' || freshUser?.role === 'Admin') return <AppShell>{children}</AppShell>;
   if (freshUser?.tool_access?.includes(toolKey)) {
     return <AppShell>{children}</AppShell>;
   }
