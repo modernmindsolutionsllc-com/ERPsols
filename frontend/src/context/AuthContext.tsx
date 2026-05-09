@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 interface AuthContextType extends AuthState {
   requestOtp: (email: string) => Promise<boolean>;
   verifyOtp: (email: string, otpCode: string) => Promise<{ token: string; user: User } | null>;
+  refreshUser: () => Promise<User | null>;
   signup: (payload: SignupPayload) => Promise<boolean>;
   logout: () => void;
 }
@@ -97,6 +98,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
+  const refreshUser = useCallback(async (): Promise<User | null> => {
+    if (!state.isAuthenticated || !state.token) return null;
+
+    const result = await authApi.getMe();
+    if ('error' in result) {
+      if (result.error.code === 'HTTP_401' || result.error.code === 'HTTP_403') {
+        setState({ user: null, token: null, isAuthenticated: false });
+        sessionStorage.removeItem('migrateos_auth');
+      }
+      return null;
+    }
+
+    setState(prev => ({ ...prev, user: result, isAuthenticated: true }));
+    return result;
+  }, [state.isAuthenticated, state.token]);
+
+  useEffect(() => {
+    if (!state.isAuthenticated) return;
+    void refreshUser();
+  }, [state.isAuthenticated, refreshUser]);
+
   const signup = useCallback(async (payload: SignupPayload): Promise<boolean> => {
     const result = await authApi.signup(payload);
     if ('error' in result) {
@@ -114,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, requestOtp, verifyOtp, signup, logout }}>
+    <AuthContext.Provider value={{ ...state, requestOtp, verifyOtp, refreshUser, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

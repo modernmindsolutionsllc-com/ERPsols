@@ -1,19 +1,21 @@
 // Types for MigrateOS
 
 export type UserRole = 'user' | 'enterprise' | 'admin' | 'Viewer' | 'Analyst' | 'Engineer' | 'Admin';
+export type ToolKey = 'config_snapshot' | 'data_conversion' | 'payroll' | 'bip_reporting';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  tool_access?: ToolKey[];
 }
 
 export interface SignupPayload {
   username: string;
   email: string;
   password: string;
-  role: 'user' | 'enterprise' | 'admin';
+  role: 'user';
 }
 
 export interface AuthState {
@@ -97,6 +99,13 @@ export interface ACPUser {
   last_active_at: string | null;
   total_active_seconds: number;
   is_restricted: boolean;
+  tool_access: ToolKey[];
+}
+
+export interface AdminTool {
+  key: ToolKey;
+  label: string;
+  description: string;
 }
 
 export interface DashboardMetrics {

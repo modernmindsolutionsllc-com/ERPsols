@@ -15,17 +15,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import {
-  LayoutDashboard, Camera, ArrowRightLeft, BarChart3, Wallet, Shield, LogOut, Menu, X, ChevronDown, Copy, Key, PlusCircle
+  LayoutDashboard, Camera, ArrowRightLeft, BarChart3, Wallet, Shield, LogOut, Menu, X, ChevronDown, Copy, Key, PlusCircle, Gem
 } from 'lucide-react';
 import { ROLE_COLORS } from '@/utils/constants';
 import { CheckCircle2 } from 'lucide-react';
+import type { ToolKey } from '@/types';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/config', label: 'Config Snapshot', icon: Camera },
-  { path: '/data-conversion', label: 'Data Conversion', icon: ArrowRightLeft },
-  { path: '/bip-reporting', label: 'BIP Reporting', icon: BarChart3 },
-  { path: '/payroll', label: 'Payroll Reconciliation', icon: Wallet },
+  { path: '/config', label: 'Config Snapshot', icon: Camera, toolKey: 'config_snapshot' as ToolKey },
+  { path: '/data-conversion', label: 'Data Conversion', icon: ArrowRightLeft, toolKey: 'data_conversion' as ToolKey },
+  { path: '/bip-reporting', label: 'BIP Reporting', icon: BarChart3, toolKey: 'bip_reporting' as ToolKey },
+  { path: '/payroll', label: 'Payroll Reconciliation', icon: Wallet, toolKey: 'payroll' as ToolKey },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [oracleModalOpen, setOracleModalOpen] = useState(false);
   const [bipModalOpen, setBipModalOpen] = useState(false);
   const [oracleConnected, setOracleConnected] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   // Check Oracle connection status on mount
   useEffect(() => {
@@ -77,6 +79,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const roleColor = user ? ROLE_COLORS[user.role] : '#64748B';
+  const isAdminRole = user?.role === 'admin' || user?.role === 'Admin';
+  const canUseTool = (toolKey?: ToolKey) => {
+    if (!toolKey) return true;
+    if (isAdminRole) return false;
+    return Boolean(user?.tool_access?.includes(toolKey));
+  };
+  const visibleNavItems = isAdminRole ? [] : navItems.filter(item => canUseTool(item.toolKey));
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] flex">
@@ -106,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 pt-4 px-3 space-y-1">
-          {navItems.map(item => {
+          {visibleNavItems.map(item => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             return (
@@ -165,8 +174,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Subscription button — only for base 'user' role */}
+            {isBaseUser && (
+              <button
+                onClick={() => setSubscribeOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 outline-none cursor-pointer"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(109,40,217,0.28) 0%, rgba(168,85,247,0.22) 100%)',
+                  border: '1px solid rgba(168,85,247,0.50)',
+                  color: '#E9D5FF',
+                  boxShadow: '0 0 10px rgba(168,85,247,0.30)',
+                }}
+                title="View subscription & available tools"
+              >
+                <Gem size={13} className="text-purple-300" />
+                Subscription
+              </button>
+            )}
+
             {/* Oracle Env Selector */}
-            {user && (
+            {user && !isAdminRole && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/10 outline-none">
@@ -243,7 +270,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Enterprise upsell modal — self-gating, only visible to "user" role */}
-      <SubscribeModal />
+      <SubscribeModal
+        externalOpen={subscribeOpen}
+        onExternalOpenChange={setSubscribeOpen}
+      />
 
       {/* Secure Oracle Credential Modal */}
       <ConnectOracleModal 

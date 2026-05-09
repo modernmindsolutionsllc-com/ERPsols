@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import type { ToolKey } from '@/types';
 import {
   Camera, ArrowRightLeft, BarChart3, Wallet, ArrowRight,
   Database, ShieldCheck, TrendingUp, Receipt,
@@ -7,6 +8,7 @@ import {
 
 const tools = [
   {
+    key: 'config_snapshot' as ToolKey,
     path: '/config',
     title: 'Config Snapshot',
     subtitle: 'REST API Configuration Tracker',
@@ -25,6 +27,7 @@ const tools = [
     statLabel: 'Active',
   },
   {
+    key: 'data_conversion' as ToolKey,
     path: '/data-conversion',
     title: 'Data Conversion',
     subtitle: 'Validation & Verification Engine',
@@ -43,6 +46,7 @@ const tools = [
     statLabel: 'Processed',
   },
   {
+    key: 'bip_reporting' as ToolKey,
     path: '/bip-reporting',
     title: 'BIP Reporting',
     subtitle: 'ETL Performance & Audit Reports',
@@ -61,6 +65,7 @@ const tools = [
     statLabel: 'Pass Rate',
   },
   {
+    key: 'payroll' as ToolKey,
     path: '/payroll',
     title: 'Payroll Reconciliation',
     subtitle: 'Pre/Post Migration Record Matching',
@@ -83,6 +88,9 @@ const tools = [
 export function DashboardPage() {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] ?? 'there';
+  const visibleTools = tools.filter(tool =>
+    user?.role !== 'admin' && user?.role !== 'Admin' && user?.tool_access?.includes(tool.key)
+  );
 
   return (
     <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
@@ -118,7 +126,7 @@ export function DashboardPage() {
 
         {/* Tool Tiles Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
-          {tools.map((tool) => {
+          {visibleTools.map((tool) => {
             const Icon = tool.icon;
             const DecorIcon = tool.decorIcon;
             return (
@@ -229,6 +237,16 @@ export function DashboardPage() {
             );
           })}
         </div>
+
+        {visibleTools.length === 0 && (
+          <div className="rounded-lg border border-white/10 bg-white/5 px-6 py-10 text-center">
+            <ShieldCheck size={32} className="mx-auto text-white/35 mb-3" />
+            <h2 className="text-lg font-semibold text-white">No tools assigned</h2>
+            <p className="mt-2 text-sm text-white/50">
+              Ask an administrator to assign access from the Admin Control Panel.
+            </p>
+          </div>
+        )}
 
         {/* Footer note */}
         <p className="mt-10 text-center text-xs text-white/25">

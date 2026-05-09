@@ -4,10 +4,20 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog';
-import { ArrowRightLeft, BarChart3, Wallet, Zap, Crown, Check, Sparkles } from 'lucide-react';
+import { ArrowRightLeft, BarChart3, Wallet, Zap, Crown, Check, Sparkles, Camera } from 'lucide-react';
+import type { ToolKey } from '@/types';
 
-const features = [
+const ALL_FEATURES: { toolKey: ToolKey; icon: React.ElementType; label: string; desc: string; color: string; bg: string }[] = [
   {
+    toolKey: 'config_snapshot',
+    icon: Camera,
+    label: 'Config Snapshot',
+    desc: 'Capture & compare ERP config states',
+    color: '#6366F1',
+    bg: 'rgba(99,102,241,0.12)',
+  },
+  {
+    toolKey: 'data_conversion',
     icon: ArrowRightLeft,
     label: 'Data Conversion',
     desc: 'Full ETL pipeline access',
@@ -15,6 +25,7 @@ const features = [
     bg: 'rgba(16,185,129,0.12)',
   },
   {
+    toolKey: 'bip_reporting',
     icon: BarChart3,
     label: 'BIP Reporting',
     desc: 'Advanced analytics & audits',
@@ -22,6 +33,7 @@ const features = [
     bg: 'rgba(245,158,11,0.12)',
   },
   {
+    toolKey: 'payroll',
     icon: Wallet,
     label: 'Payroll Reconciliation',
     desc: 'Pre/post migration matching',
@@ -30,24 +42,56 @@ const features = [
   },
 ];
 
+const SESSION_KEY = 'migrateos_sub_shown';
+
+interface SubscribeModalProps {
+  /** Controlled open state from navbar button */
+  externalOpen?: boolean;
+  onExternalOpenChange?: (open: boolean) => void;
+}
+
 /**
  * SubscribeModal — Premium Enterprise upsell
- * Auto-triggers for "user" role on every dashboard visit.
+ * Auto-triggers ONCE per session for "user" role on first login.
+ * Can also be opened on demand via externalOpen prop.
  */
-export function SubscribeModal() {
+export function SubscribeModal({ externalOpen, onExternalOpenChange }: SubscribeModalProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
 
+  // Auto-show once per session after first login
   useEffect(() => {
     if (user?.role !== 'user') return;
-    const timer = setTimeout(() => setOpen(true), 800);
+    if (sessionStorage.getItem(SESSION_KEY)) return; // already shown this session
+    const timer = setTimeout(() => {
+      setOpen(true);
+      sessionStorage.setItem(SESSION_KEY, '1');
+    }, 800);
     return () => clearTimeout(timer);
-  }, [user]);
+  }, [user?.role]); // only re-run if role changes (i.e. fresh login)
+
+  // Sync with external open signal (navbar button)
+  useEffect(() => {
+    if (externalOpen !== undefined) setOpen(externalOpen);
+  }, [externalOpen]);
+
+  const handleOpenChange = (val: boolean) => {
+    setOpen(val);
+    onExternalOpenChange?.(val);
+  };
 
   if (user?.role !== 'user') return null;
 
+  // Only show tools the user does NOT already have access to
+  const features = ALL_FEATURES.filter(
+    f => !user?.tool_access?.includes(f.toolKey)
+  );
+
+  // Nothing to upsell — all tools granted
+  if (features.length === 0) return null;
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className="sm:max-w-[720px] p-0 overflow-hidden border-0 shadow-2xl rounded-2xl"
         showCloseButton={false}

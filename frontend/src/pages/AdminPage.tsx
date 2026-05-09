@@ -3,9 +3,9 @@ import { adminApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { formatActiveTime, formatLastActive } from '@/utils/formatters';
 import { toast } from 'sonner';
-import type { ACPUser, ApiError } from '@/types';
+import type { ACPUser, AdminTool, ApiError, ToolKey } from '@/types';
 import {
-  Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw
+  Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw, KeyRound, Trash2
 } from 'lucide-react';
 
 // ── Types for the real backend ACP response ───────────────────────────────────
@@ -38,6 +38,10 @@ export function AdminPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [toggling, setToggling] = useState<number | null>(null);
+  const [tools, setTools] = useState<AdminTool[]>([]);
+  const [savingAccess, setSavingAccess] = useState<number | null>(null);
+  const [draftToolAccess, setDraftToolAccess] = useState<Record<number, ToolKey[]>>({});
+  const [deleting, setDeleting] = useState<number | null>(null);
   const { user: currentUser } = useAuth();
 
   // ── Fetch users from backend ──────────────────────────────────────────────
@@ -53,6 +57,7 @@ export function AdminPage() {
       setUsers([]);
     } else {
       setUsers(res);
+      setDraftToolAccess(Object.fromEntries(res.map(u => [u.id, u.tool_access])));
     }
     setLoading(false);
   }, [roleFilter, search]);
@@ -60,6 +65,18 @@ export function AdminPage() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    async function loadTools() {
+      const res = await adminApi.getTools();
+      if (isApiError(res)) {
+        toast.error(res.error.message);
+      } else {
+        setTools(res);
+      }
+    }
+    loadTools();
+  }, []);
 
   // ── Debounced search ──────────────────────────────────────────────────────
 
@@ -84,6 +101,57 @@ export function AdminPage() {
       ));
     }
     setToggling(null);
+  }
+
+  function getDraftAccess(targetUser: ACPUser): ToolKey[] {
+    return draftToolAccess[targetUser.id] || targetUser.tool_access;
+  }
+
+  function handleToggleToolAccess(targetUser: ACPUser, toolKey: ToolKey) {
+    setDraftToolAccess(prev => {
+      const current = prev[targetUser.id] || targetUser.tool_access;
+      const nextAccess = current.includes(toolKey)
+        ? current.filter(key => key !== toolKey)
+        : [...current, toolKey];
+
+      return { ...prev, [targetUser.id]: nextAccess };
+    });
+  }
+
+  function hasToolChanges(targetUser: ACPUser): boolean {
+    const saved = [...targetUser.tool_access].sort().join('|');
+    const draft = [...getDraftAccess(targetUser)].sort().join('|');
+    return saved !== draft;
+  }
+
+  async function handleSaveToolAccess(targetUser: ACPUser) {
+    const nextAccess = getDraftAccess(targetUser);
+
+    setSavingAccess(targetUser.id);
+    const res = await adminApi.updateUser(targetUser.id, { tool_access: nextAccess });
+    if (isApiError(res)) {
+      toast.error(res.error.message);
+    } else {
+      toast.success('Tool access updated');
+      setUsers(prev => prev.map(u => u.id === targetUser.id ? res : u));
+      setDraftToolAccess(prev => ({ ...prev, [targetUser.id]: res.tool_access }));
+    }
+    setSavingAccess(null);
+  }
+
+  async function handleDeleteUser(targetUser: ACPUser) {
+    const confirmed = window.confirm(`Delete ${targetUser.email}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeleting(targetUser.id);
+    const res = await adminApi.deleteUser(targetUser.id);
+    if (isApiError(res)) {
+      toast.error(res.error.message);
+    } else {
+      toast.success(res.message);
+      setUsers(prev => prev.filter(u => u.id !== targetUser.id));
+    }
+    setDeleting(null);
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -188,6 +256,7 @@ export function AdminPage() {
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Email</th>
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Username</th>
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Role</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Tools</th>
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Joined</th>
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Last Active</th>
                   <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">
@@ -218,6 +287,47 @@ export function AdminPage() {
                           {u.role}
                         </span>
                       </td>
+                      <td className="px-4 py-3 min-w-[280px]">
+                        {u.role === 'admin' ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#6B3FA01A] text-[#6B3FA0]">
+                            <KeyRound size={12} /> All tools
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {tools.map(tool => {
+                              const checked = getDraftAccess(u).includes(tool.key);
+                              return (
+                                <button
+                                  key={tool.key}
+                                  type="button"
+                                  disabled={savingAccess === u.id}
+                                  onClick={() => handleToggleToolAccess(u, tool.key)}
+                                  title={tool.description}
+                                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-60 ${
+                                    checked
+                                      ? 'border-[#185FA5]/30 bg-[#185FA51A] text-[#185FA5]'
+                                      : 'border-[#CBD5E1] bg-white text-[#64748B] hover:bg-[#F8FAFC]'
+                                  }`}
+                                >
+                                  {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : <KeyRound size={11} />}
+                                  {tool.label}
+                                </button>
+                              );
+                            })}
+                            {hasToolChanges(u) && (
+                              <button
+                                type="button"
+                                disabled={savingAccess === u.id}
+                                onClick={() => handleSaveToolAccess(u)}
+                                className="inline-flex items-center gap-1 rounded-md bg-[#185FA5] px-2 py-1 text-xs font-semibold text-white hover:bg-[#124A82] disabled:opacity-60"
+                              >
+                                {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : null}
+                                Save tools
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm text-[#64748B]">{formatDate(u.created_at)}</td>
                       <td className="px-4 py-3 text-sm text-[#334155] font-medium">{formatLastActive(u.last_active_at)}</td>
                       <td className="px-4 py-3 text-sm font-mono text-[#334155]">
@@ -237,24 +347,37 @@ export function AdminPage() {
                       <td className="px-4 py-3 text-center">
                         {isSelf ? (
                           <span className="text-xs text-[#94A3B8] italic">You</span>
-                        ) : toggling === u.id ? (
-                          <Loader2 size={16} className="animate-spin text-[#64748B] mx-auto" />
-                        ) : u.is_restricted ? (
-                          <button
-                            onClick={() => handleToggleRestriction(u.id, u.is_restricted)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[#0F6E56] text-white hover:bg-[#0B5C47] transition-colors"
-                          >
-                            <ShieldCheck size={13} />
-                            Unrestrict
-                          </button>
                         ) : (
-                          <button
-                            onClick={() => handleToggleRestriction(u.id, u.is_restricted)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[#DC2626] text-white hover:bg-[#B91C1C] transition-colors"
-                          >
-                            <ShieldAlert size={13} />
-                            Restrict
-                          </button>
+                          <div className="flex justify-center gap-2">
+                            {toggling === u.id ? (
+                              <Loader2 size={16} className="animate-spin text-[#64748B] mt-1.5" />
+                            ) : u.is_restricted ? (
+                              <button
+                                onClick={() => handleToggleRestriction(u.id, u.is_restricted)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[#0F6E56] text-white hover:bg-[#0B5C47] transition-colors"
+                              >
+                                <ShieldCheck size={13} />
+                                Unrestrict
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleToggleRestriction(u.id, u.is_restricted)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[#DC2626] text-white hover:bg-[#B91C1C] transition-colors"
+                              >
+                                <ShieldAlert size={13} />
+                                Restrict
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteUser(u)}
+                              disabled={deleting === u.id || u.role === 'admin'}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title={u.role === 'admin' ? 'Admin accounts cannot be deleted here' : 'Delete user'}
+                            >
+                              {deleting === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              Delete
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

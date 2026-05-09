@@ -1,6 +1,6 @@
 import type {
   ApiResponse, Snapshot, SnapshotDiff, ETLJob, Report, PayrollException,
-  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError, SignupPayload, ACPUser
+  AuditLogEntry, AdminUser, DashboardMetrics, User, ApiError, SignupPayload, ACPUser, AdminTool, ToolKey
 } from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -289,6 +289,7 @@ export const authApi = {
         role: User['role'];
         is_active: boolean;
         created_at: string;
+        tool_access?: ToolKey[];
       };
     }>('/auth/verify-otp', {
       method: 'POST',
@@ -304,7 +305,28 @@ export const authApi = {
         name: result.user.username,
         email: result.user.email,
         role: result.user.role,
+        tool_access: result.user.tool_access || [],
       },
+    };
+  },
+
+  async getMe(): Promise<User | ApiError> {
+    const result = await authenticatedJson<{
+      id: number;
+      username: string;
+      email: string;
+      role: User['role'];
+      tool_access?: ToolKey[];
+    }>('/me');
+
+    if ('error' in result) return result;
+
+    return {
+      id: String(result.id),
+      name: result.username,
+      email: result.email,
+      role: result.role,
+      tool_access: result.tool_access || [],
     };
   }
 };
@@ -423,6 +445,10 @@ export const payrollApi = {
 };
 
 export const adminApi = {
+  async getTools(): Promise<AdminTool[] | ApiError> {
+    return authenticatedJson<AdminTool[]>('/api/v1/admin/tools');
+  },
+
   /** Fetch all users from the real backend ACP endpoint */
   async getUsers(role?: string, search?: string): Promise<ACPUser[] | ApiError> {
     const params = new URLSearchParams();
@@ -430,6 +456,19 @@ export const adminApi = {
     if (search) params.set('search', search);
     const qs = params.toString();
     return authenticatedJson<ACPUser[]>(`/api/v1/admin/users${qs ? '?' + qs : ''}`);
+  },
+
+  async updateUser(userId: number, payload: { role?: 'enterprise' | 'user'; tool_access?: ToolKey[]; is_restricted?: boolean }): Promise<ACPUser | ApiError> {
+    return authenticatedJson<ACPUser>(`/api/v1/admin/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteUser(userId: number): Promise<{ message: string } | ApiError> {
+    return authenticatedJson<{ message: string }>(`/api/v1/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
   },
 
   /** Admin kill-switch: toggle is_restricted on a user */

@@ -19,7 +19,7 @@ class SignupRequest(BaseModel):
     username: str
     email: EmailStr
     password: str
-    role: Literal["admin", "enterprise", "user"] = "user"
+    role: Literal["user"] = "user"
 
     @field_validator("username")
     @classmethod
@@ -70,6 +70,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    tool_access: list[str] = []
 
 
 class TokenResponse(BaseModel):
@@ -155,29 +156,6 @@ class ToolAccessResponse(BaseModel):
     key: ToolKey
     label: str
     description: str
-
-
-class AdminUserCreateRequest(BaseModel):
-    """Admin-created account with explicit role and tool grants."""
-    email: EmailStr
-    role: AssignableRole
-    tool_access: list[ToolKey] = []
-    username: Optional[str] = None
-
-    @field_validator("username")
-    @classmethod
-    def username_min_length_optional(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        stripped = v.strip()
-        if len(stripped) < 3:
-            raise ValueError("Username must be at least 3 characters.")
-        return stripped
-
-    @field_validator("tool_access")
-    @classmethod
-    def unique_tool_access(cls, v: list[ToolKey]) -> list[ToolKey]:
-        return list(dict.fromkeys(v))
 
 
 class AdminUserUpdateRequest(BaseModel):
@@ -350,29 +328,6 @@ class ToolAccessResponse(BaseModel):
     key: ToolKey
     label: str
     description: str
-
-
-class AdminUserCreateRequest(BaseModel):
-    """Admin-created account with explicit role and tool grants."""
-    email: EmailStr
-    role: AssignableRole
-    tool_access: list[ToolKey] = []
-    username: Optional[str] = None
-
-    @field_validator("username")
-    @classmethod
-    def username_min_length_optional(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        stripped = v.strip()
-        if len(stripped) < 3:
-            raise ValueError("Username must be at least 3 characters.")
-        return stripped
-
-    @field_validator("tool_access")
-    @classmethod
-    def unique_tool_access(cls, v: list[ToolKey]) -> list[ToolKey]:
-        return list(dict.fromkeys(v))
 
 
 class AdminUserUpdateRequest(BaseModel):

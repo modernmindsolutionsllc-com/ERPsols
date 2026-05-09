@@ -10,9 +10,10 @@ load_dotenv()
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from database import init_db
+from sqlalchemy.orm import Session
+from database import init_db, get_db, User, UserToolAccess
 from Auth import router as auth_router
-from Auth_utils import get_current_user
+from dependencies import get_verified_user
 from routers import config_snapshot
 from routers import data_conversion
 from routers import payroll
@@ -89,6 +90,23 @@ def health_check():
 # ── Authenticated Identity ─────────────────────────────────────────────────────
 
 @app.get("/me", tags=["Identity"])
-def get_me(current_user: dict = Depends(get_current_user)):
-    """Returns the decoded JWT payload for the currently authenticated user."""
-    return current_user
+def get_me(
+    current_user: dict = Depends(get_verified_user),
+    db: Session = Depends(get_db),
+):
+    """Returns the live authenticated user profile and current tool grants."""
+    user_id = int(current_user["sub"])
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return current_user
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": current_user.get("role", "user"),
+        "tool_access": sorted(
+            grant.tool_key
+            for grant in db.query(UserToolAccess).filter(UserToolAccess.user_id == user.id).all()
+        ),
+    }

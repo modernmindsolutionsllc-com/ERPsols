@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from database import get_connection, get_db, User, Role
+from database import get_connection, get_db, User, Role, UserToolAccess
 from Schemas import (
     SignupRequest,
     OTPRequest,
@@ -52,7 +52,7 @@ def signup(body: SignupRequest):
             )
 
         # Resolve role_id from role name
-        cur.execute("SELECT id FROM roles WHERE name = ?", (body.role,))
+        cur.execute("SELECT id FROM roles WHERE name = ?", ("user",))
         role_row = cur.fetchone()
         if not role_row:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.")
@@ -177,6 +177,10 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     # ── Resolve the role name for the JWT payload ──────────────────────────────
     role = db.query(Role).filter(Role.id == user.role_id).first()
     role_name = role.name if role else "user"
+    tool_access = sorted(
+        grant.tool_key
+        for grant in db.query(UserToolAccess).filter(UserToolAccess.user_id == user.id).all()
+    )
 
     # ── Issue JWT ──────────────────────────────────────────────────────────────
     token = create_access_token({
@@ -195,5 +199,6 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
             role=role_name,
             is_active=bool(user.is_active),
             created_at=user.created_at,
+            tool_access=tool_access,
         ),
     }

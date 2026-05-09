@@ -8,18 +8,14 @@ and the restriction "kill switch" for immediate account lockout.
 All endpoints gated behind `require_admin` — only admins can access.
 """
 
-import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from Auth_utils import hash_password
 from database import get_db, User, Role, UserToolAccess
 from dependencies import TOOL_CATALOG, require_admin
 from Schemas import (
-    AdminUserCreateRequest,
     AdminUserUpdateRequest,
     ToolAccessResponse,
     UserAdminResponse,
@@ -35,17 +31,19 @@ router = APIRouter(
 )
 
 
-def _normalise_username(email: str, username: Optional[str]) -> str:
-    if username:
-        return username.strip()
-    return email.split("@", 1)[0].strip()
-
-
 def _set_tool_access(db: Session, user: User, tool_access: list[str]) -> None:
-    user.tool_access.clear()
+    # Explicitly DELETE existing rows first and flush so the DB constraint
+    # is cleared before we INSERT the new set. Using relationship.clear()
+    # alone can race with INSERT under SQLAlchemy's identity map, causing
+    # a UNIQUE constraint violation when the same tool_key is re-assigned.
+    db.query(UserToolAccess).filter(UserToolAccess.user_id == user.id).delete(
+        synchronize_session="fetch"
+    )
+    db.flush()  # Commit deletes to DB before inserting
+
     for tool_key in tool_access:
-        user.tool_access.append(UserToolAccess(tool_key=tool_key))
-    db.flush()
+        db.add(UserToolAccess(user_id=user.id, tool_key=tool_key))
+    db.flush()  # Flush inserts
 
 
 def _to_admin_response(user: User) -> UserAdminResponse:
@@ -114,6 +112,7 @@ def list_users(
                 username=user.username,
                 role=role_name,
                 created_at=user.created_at,
+                last_active_at=user.last_active_at,
                 total_active_seconds=user.total_active_seconds or 0,
                 is_restricted=bool(user.is_restricted),
                 tool_access=sorted(grant.tool_key for grant in user.tool_access),
@@ -124,58 +123,6 @@ def list_users(
 
 
 # ── PUT /users/{user_id}/restrict ──────────────────────────────────────────────
-
-@router.post("/users", response_model=UserAdminResponse, status_code=status.HTTP_201_CREATED)
-def create_user(
-    body: AdminUserCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_admin),
-):
-    """
-    Create a user or enterprise account and assign selected tool access.
-
-    Passwordless OTP login does not use password_hash, but the legacy schema
-    requires it, so a cryptographically random placeholder is stored.
-    """
-    email = body.email.lower()
-    username = _normalise_username(email, body.username)
-
-    existing = (
-        db.query(User)
-        .filter(
-            (func.lower(User.email) == email)
-            | (func.lower(User.username) == username.lower())
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email or username already registered.",
-        )
-
-    role = db.query(Role).filter(Role.name == body.role).first()
-    if not role:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role.",
-        )
-
-    user = User(
-        username=username,
-        email=email,
-        password_hash=hash_password(secrets.token_urlsafe(32)),
-        role_id=role.id,
-        is_active=1,
-    )
-    db.add(user)
-    db.flush()
-    _set_tool_access(db, user, body.tool_access)
-    db.commit()
-    db.refresh(user)
-
-    return _to_admin_response(user)
-
 
 @router.put("/users/{user_id}", response_model=UserAdminResponse)
 def update_user(
@@ -219,6 +166,42 @@ def update_user(
     db.refresh(user)
 
     return _to_admin_response(user)
+
+
+@router.delete("/users/{user_id}", response_model=MessageResponse)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """Delete an existing non-admin user from the Admin Control Panel."""
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {user_id} not found.",
+        )
+
+    caller_id = int(current_user["sub"])
+    if user.id == caller_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account.",
+        )
+
+    role_name = user.role_rel.name if user.role_rel else "unknown"
+    if role_name == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin accounts cannot be deleted from this panel.",
+        )
+
+    username = user.username
+    db.delete(user)
+    db.commit()
+
+    return {"message": f"User '{username}' has been deleted successfully."}
 
 
 @router.put("/users/{user_id}/restrict", response_model=MessageResponse)
