@@ -48,7 +48,9 @@ function ToolRoute({ toolKey, children }: { toolKey: ToolKey; children: React.Re
       }
       const latest = await refreshUser();
       if (!active) return;
-      setFreshUser(latest);
+      // If the API returns null (network error etc.), fall back to the
+      // already-cached user so a transient failure doesn't block access.
+      setFreshUser(prev => latest ?? prev);
       setChecking(false);
     }
     void checkAccess();
