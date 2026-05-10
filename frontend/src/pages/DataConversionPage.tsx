@@ -56,7 +56,7 @@ function ToolWelcomeBanner() {
               Validation &amp; Verification Engine
             </p>
             <p className="mt-2 text-sm text-white/55 max-w-2xl leading-relaxed">
-              Run end-to-end ETL pipelines — Extract, Transform, Validate, Verify, and Load. Ensure data integrity and completeness before committing to the target system.
+              Run end-to-end ETL pipelines - Extract, Transform, Validate, Verify, and Load. Ensure data integrity and completeness before committing to the target system.
             </p>
           </div>
         </div>
@@ -121,8 +121,8 @@ export function DataConversionPage() {
       <ToolWelcomeBanner />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">ETL Jobs</h2>
-          <p className="text-sm text-[#64748B] mt-0.5">Extract → Transform → Validate → Verify → Load</p>
+          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">ETL Jobs</h2>
+          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Extract - Transform - Validate - Verify - Load</p>
         </div>
         {canRun && (
           <button
@@ -135,11 +135,9 @@ export function DataConversionPage() {
         )}
       </div>
 
-      {/* ETL Stepper */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg p-6 mb-6">
+      <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-6 mb-6">
         <div className="flex items-center justify-between max-w-[800px] mx-auto">
           {ETL_STEPS.map((step, i) => {
-            // Determine step state based on active jobs
             const hasRunning = activeJobs.length > 0;
             const stepStatus = hasRunning
               ? i < 2 ? 'completed' : i === 2 ? 'active' : 'pending'
@@ -151,23 +149,31 @@ export function DataConversionPage() {
               <div key={step} className="flex items-center flex-1">
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all duration-300
-                      ${stepStatus === 'completed'
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all duration-300 ${
+                      stepStatus === 'completed'
                         ? 'bg-[#0F6E56] border-[#0F6E56] text-white'
                         : stepStatus === 'active'
                           ? 'border-[#0F6E56] text-[#0F6E56] animate-pulse'
-                          : 'border-[#E2E8F0] text-[#94A3B8]'
-                      }`}
+                          : 'border-[#E2E8F0] dark:border-white/10 text-[#94A3B8] dark:text-slate-500'
+                    }`}
                     style={stepStatus === 'active' ? { boxShadow: '0 0 0 4px rgba(15,110,86,0.15)' } : {}}
                   >
                     {stepStatus === 'completed' ? <CheckCircle2 size={14} /> : i + 1}
                   </div>
-                  <span className={`text-xs mt-2 font-medium ${stepStatus === 'completed' ? 'text-[#0F6E56]' : stepStatus === 'active' ? 'text-[#0F6E56]' : 'text-[#94A3B8]'}`}>
+                  <span className={`text-xs mt-2 font-medium ${
+                    stepStatus === 'completed'
+                      ? 'text-[#0F6E56]'
+                      : stepStatus === 'active'
+                        ? 'text-[#0F6E56]'
+                        : 'text-[#94A3B8] dark:text-slate-500'
+                  }`}>
                     {step}
                   </span>
                 </div>
                 {i < ETL_STEPS.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-2 transition-colors duration-300 ${stepStatus === 'completed' ? 'bg-[#0F6E56]' : 'bg-[#E2E8F0]'}`} />
+                  <div className={`flex-1 h-0.5 mx-2 transition-colors duration-300 ${
+                    stepStatus === 'completed' ? 'bg-[#0F6E56]' : 'bg-[#E2E8F0] dark:bg-white/10'
+                  }`} />
                 )}
               </div>
             );
@@ -175,16 +181,15 @@ export function DataConversionPage() {
         </div>
       </div>
 
-      {/* Active Jobs */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden mb-6">
-        <div className="px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="text-base font-semibold text-[#0F172A]">Active Jobs</h2>
+      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden mb-6">
+        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10">
+          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Active Jobs</h2>
         </div>
         {jobsLoading && activeJobs.length === 0 ? (
           <div className="p-4">
             <div className="space-y-3">
               {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="h-14 bg-gray-100 rounded animate-pulse" />
+                <div key={i} className="h-14 bg-gray-100 dark:bg-slate-800 rounded animate-pulse" />
               ))}
             </div>
           </div>
@@ -198,24 +203,24 @@ export function DataConversionPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#F3F4F6]">
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Job ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Progress</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Started</th>
+                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Job ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Progress</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Started</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
                 {activeJobs.map(job => (
-                  <tr key={job.id} className="hover:bg-[#EAF2FB] transition-colors">
-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{job.id}</td>
+                  <tr key={job.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
+                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{job.id}</td>
                     <td className="px-4 py-3 w-[280px]">
                       <ProgressBarPulse value={job.progress} status={job.status} />
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={job.status === 'running' ? 'Running' : 'Pending'} pulse={job.status === 'running'} />
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#64748B]">{new Date(job.startedAt).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{new Date(job.startedAt).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -224,10 +229,9 @@ export function DataConversionPage() {
         )}
       </div>
 
-      {/* Completed Jobs */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="text-base font-semibold text-[#0F172A]">Completed Jobs</h2>
+      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10">
+          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Completed Jobs</h2>
         </div>
         {completedJobs.length === 0 ? (
           <EmptyState
@@ -239,27 +243,27 @@ export function DataConversionPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#F3F4F6]">
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Job ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Source → Target</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Records</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Duration</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
+                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Job ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Source - Target</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Records</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Duration</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
                   <th className="w-16"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
                 {completedJobs.map(job => (
-                  <tr key={job.id} className="hover:bg-[#EAF2FB] transition-colors">
-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{job.id}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B]">{job.source} → {job.target}</td>
-                    <td className="px-4 py-3 text-sm text-[#0F172A]">{new Intl.NumberFormat().format(job.recordsProcessed || 0)}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B]">{job.duration || '-'}</td>
+                  <tr key={job.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
+                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{job.id}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{job.source} - {job.target}</td>
+                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100">{new Intl.NumberFormat().format(job.recordsProcessed || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{job.duration || '-'}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={job.status === 'completed' ? 'Completed' : 'Failed'} />
                     </td>
                     <td className="px-4 py-3">
-                      <button className="p-1.5 hover:bg-gray-100 rounded text-[#64748B] hover:text-[#185FA5] transition-colors">
+                      <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 rounded text-[#64748B] dark:text-slate-400 hover:text-[#185FA5] transition-colors">
                         <Download size={16} />
                       </button>
                     </td>
@@ -271,24 +275,23 @@ export function DataConversionPage() {
         )}
       </div>
 
-      {/* Run ETL Job Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/45" onClick={() => setModalOpen(false)} />
-          <div className="relative bg-white rounded-xl p-6 w-full max-w-[480px] mx-4 shadow-xl" style={{ animation: 'scale-in 200ms ease-out' }}>
+          <div className="relative bg-white dark:bg-slate-950 rounded-xl p-6 w-full max-w-[480px] mx-4 shadow-xl border border-transparent dark:border-white/10" style={{ animation: 'scale-in 200ms ease-out' }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-[#0F172A]">Configure ETL Job</h2>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X size={18} className="text-[#64748B]" />
+              <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">Configure ETL Job</h2>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
+                <X size={18} className="text-[#64748B] dark:text-slate-400" />
               </button>
             </div>
             <form onSubmit={handleRunJob} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Source System</label>
+                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Source System</label>
                 <select
                   value={source}
                   onChange={e => setSource(e.target.value)}
-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white"
+                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white dark:bg-slate-900"
                 >
                   <option>Legacy HR</option>
                   <option>Legacy Payroll</option>
@@ -296,11 +299,11 @@ export function DataConversionPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Target System</label>
+                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Target System</label>
                 <select
                   value={target}
                   onChange={e => setTarget(e.target.value)}
-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white"
+                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white dark:bg-slate-900"
                 >
                   <option>Modern HRIS</option>
                   <option>Modern Payroll</option>
@@ -308,20 +311,20 @@ export function DataConversionPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Job Name <span className="text-[#94A3B8] font-normal">(optional)</span></label>
+                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Job Name <span className="text-[#94A3B8] dark:text-slate-500 font-normal">(optional)</span></label>
                 <input
                   type="text"
                   value={jobName}
                   onChange={e => setJobName(e.target.value)}
                   placeholder={`ETL-${Date.now()}`}
-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
+                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-[#64748B] hover:bg-gray-50 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-[#64748B] dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
                 >
                   Cancel
                 </button>

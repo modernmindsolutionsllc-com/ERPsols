@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { usePermission } from '@/hooks/usePermission';
 import { useSessionHeartbeat } from '@/hooks/useSessionHeartbeat';
 import { SubscribeModal } from '@/components/shared/SubscribeModal';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import {
   LayoutDashboard,
   Camera,
@@ -15,6 +16,7 @@ import {
   Menu,
   X,
   Gem,
+  ArrowLeft,
 } from 'lucide-react';
 import { ROLE_COLORS } from '@/utils/constants';
 
@@ -26,7 +28,7 @@ const navItems = [
   { path: '/payroll', label: 'Payroll Reconciliation', icon: Wallet },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -35,6 +37,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   const isBaseUser = user?.role === 'user';
+  const isAdminRole = user?.role === 'admin' || user?.role === 'Admin';
+  const defaultBackPath = isAdminRole ? '/admin' : '/dashboard';
+  const hasInAppBackHistory = location.key !== 'default';
+  const showBackButton = location.pathname !== defaultBackPath;
 
   useSessionHeartbeat();
 
@@ -43,10 +49,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     navigate('/login');
   };
 
+  const handleBack = () => {
+    if (hasInAppBackHistory) {
+      navigate(-1);
+      return;
+    }
+
+    navigate(defaultBackPath);
+  };
+
   const roleColor = user ? ROLE_COLORS[user.role] : '#64748B';
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] flex">
+    <div className="min-h-screen bg-[#F3F4F6] text-[#0F172A] transition-colors dark:bg-[#020817] dark:text-slate-100 flex">
       {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/45 z-40 lg:hidden"
@@ -56,8 +71,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {!isBaseUser && (
         <aside
-          className={`fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0F172A] flex flex-col transition-transform duration-250 ease-out
-            ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+          className={`fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0F172A] dark:bg-[#081122] border-r border-white/5 dark:border-white/10 flex flex-col transition-transform duration-250 ease-out ${
+            mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }`}
           style={{ transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)' }}
         >
           <div className="h-14 flex items-center px-6 border-b border-white/10 lg:hidden">
@@ -74,16 +90,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {navItems.map(item => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
+
               return (
                 <Link
                   key={item.path}
                   to={item.path}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150
-                    ${isActive
+                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150 ${
+                    isActive
                       ? 'bg-[#185FA5] text-white'
                       : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
-                    }`}
+                  }`}
                 >
                   <Icon size={16} />
                   <span>{item.label}</span>
@@ -97,11 +114,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   to="/admin"
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150
-                    ${location.pathname === '/admin'
+                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150 ${
+                    location.pathname === '/admin'
                       ? 'bg-[#185FA5] text-white'
                       : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
-                    }`}
+                  }`}
                 >
                   <Shield size={16} />
                   <span>Admin</span>
@@ -113,8 +130,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 bg-[#185FA5] flex items-center justify-between px-4 lg:px-6 shadow-sm z-30 sticky top-0">
+        <header className="h-14 bg-[#185FA5] dark:bg-[#081225] border-b border-black/5 dark:border-white/10 flex items-center justify-between px-4 lg:px-6 shadow-sm z-30 sticky top-0">
           <div className="flex items-center gap-3">
+            {showBackButton && (
+              <button
+                type="button"
+                className="inline-flex size-8 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                onClick={handleBack}
+                title="Go back"
+              >
+                <ArrowLeft size={17} />
+              </button>
+            )}
+
             {!isBaseUser && (
               <button
                 className="lg:hidden text-white/80 hover:text-white"
@@ -123,12 +151,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Menu size={20} />
               </button>
             )}
-            <div className="w-4 h-4 bg-white rounded-sm" />
+
+            <div className="size-4 bg-white rounded-sm" />
             <span className="text-white font-semibold text-base">MigrateOS</span>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Subscription button — only for base 'user' role */}
+            <ThemeToggle />
+
             {isBaseUser && (
               <button
                 onClick={() => setSubscribeOpen(true)}
@@ -139,7 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   color: '#E9D5FF',
                   boxShadow: '0 0 12px rgba(168,85,247,0.35)',
                 }}
-                title="View subscription & available tools"
+                title="View subscription and available tools"
               >
                 <Gem size={13} className="text-purple-300" />
                 Subscription
@@ -154,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   {user.role}
                 </span>
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#0F172A] text-sm font-semibold ml-1">
+                <div className="size-8 rounded-full bg-white flex items-center justify-center text-[#0F172A] text-sm font-semibold ml-1">
                   {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                 </div>
                 <button
@@ -174,7 +204,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Enterprise upsell modal — auto-shows once per login, also openable from navbar button */}
       <SubscribeModal
         externalOpen={subscribeOpen}
         onExternalOpenChange={setSubscribeOpen}
@@ -182,4 +211,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

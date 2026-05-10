@@ -66,8 +66,8 @@ export function BIPReportingPage() {
   const [directSql, setDirectSql] = useState('select 1 from dual');
 
   useEffect(() => {
-    fetchReports();
-    fetchOracleStatus();
+    void fetchReports();
+    void fetchOracleStatus();
   }, []);
 
   const fetchReports = async () => {
@@ -152,11 +152,11 @@ export function BIPReportingPage() {
       <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-250 p-6 lg:p-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
               <BarChart3 className="text-[#185FA5]" size={32} />
               BIP Reporting Tool
             </h1>
-            <p className="text-gray-500 mt-2">
+            <p className="text-gray-500 dark:text-slate-400 mt-2">
               Connect Oracle, run SQL through the BIP executor, and download the generated workbook from this page.
             </p>
           </div>
@@ -165,7 +165,9 @@ export function BIPReportingPage() {
             <Button
               onClick={() => setOracleModalOpen(true)}
               variant={oracleConnected ? 'outline' : 'default'}
-              className={oracleConnected ? 'gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'gap-2 bg-[#185FA5] text-white'}
+              className={oracleConnected
+                ? 'gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                : 'gap-2 bg-[#185FA5] text-white'}
               size="lg"
             >
               <KeyRound className="h-5 w-5" />
@@ -174,7 +176,7 @@ export function BIPReportingPage() {
             <Button
               onClick={() => setBipModalOpen(true)}
               variant="outline"
-              className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+              className="gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-800 dark:hover:text-emerald-200"
               size="lg"
             >
               <PlusCircle className="h-5 w-5" />
@@ -183,13 +185,13 @@ export function BIPReportingPage() {
           </div>
         </div>
 
-        <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
-          <div className="border-b bg-gray-50 px-5 py-3 flex items-center justify-between gap-3">
+        <Card className="border dark:border-white/10 shadow-sm rounded-xl overflow-hidden bg-white dark:bg-slate-950">
+          <div className="border-b dark:border-white/10 bg-gray-50 dark:bg-slate-900 px-5 py-3 flex items-center justify-between gap-3">
             <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
               <TerminalSquare size={16} />
               Run SQL Query
             </div>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-slate-400">
               {oracleConnected ? `Connected as ${oracleStatus?.oracle_username}` : 'Oracle credentials required'}
             </span>
           </div>
@@ -239,8 +241,8 @@ export function BIPReportingPage() {
           </form>
         </Card>
 
-        <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
-          <div className="border-b bg-gray-50 px-5 py-3 flex items-center justify-between gap-3">
+        <Card className="border dark:border-white/10 shadow-sm rounded-xl overflow-hidden bg-white dark:bg-slate-950">
+          <div className="border-b dark:border-white/10 bg-gray-50 dark:bg-slate-900 px-5 py-3 flex items-center justify-between gap-3">
             <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
               <Database size={16} />
               Saved Data Models
@@ -257,21 +259,21 @@ export function BIPReportingPage() {
 
           <div className="p-0">
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+              <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-slate-500">
                 <Loader2 className="h-8 w-8 animate-spin mb-4 text-[#185FA5]" />
                 <p>Loading configurations...</p>
               </div>
             ) : reports.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+              <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-slate-500">
                 <BarChart3 className="h-12 w-12 mb-4 opacity-20" />
-                <p className="text-lg font-medium text-gray-600">No reports found.</p>
+                <p className="text-lg font-medium text-gray-600 dark:text-slate-300">No reports found.</p>
                 <p className="text-sm mt-1">Use Save SQL Report on this page to add one.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    <TableRow className="bg-gray-50 dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-900">
                       <TableHead className="w-12 text-center">
                         <Checkbox
                           checked={isAllSelected}
@@ -298,14 +300,14 @@ export function BIPReportingPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-200">
                             {report.module}
                           </span>
                         </TableCell>
-                        <TableCell className="font-medium text-gray-900">
+                        <TableCell className="font-medium text-gray-900 dark:text-slate-100">
                           {report.report_name}
                         </TableCell>
-                        <TableCell className="text-right text-gray-500 text-sm flex items-center justify-end gap-1.5">
+                        <TableCell className="text-right text-gray-500 dark:text-slate-400 text-sm flex items-center justify-end gap-1.5">
                           <Clock size={14} className="opacity-70" />
                           {format(new Date(report.created_at), 'MMM d, yyyy HH:mm')}
                         </TableCell>
@@ -323,7 +325,7 @@ export function BIPReportingPage() {
         open={oracleModalOpen}
         onOpenChange={open => {
           setOracleModalOpen(open);
-          if (!open) fetchOracleStatus();
+          if (!open) void fetchOracleStatus();
         }}
       />
 
@@ -331,7 +333,7 @@ export function BIPReportingPage() {
         open={bipModalOpen}
         onOpenChange={open => {
           setBipModalOpen(open);
-          if (!open) fetchReports();
+          if (!open) void fetchReports();
         }}
       />
     </>

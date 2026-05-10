@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export function usePoll<T>(
   fetcher: () => Promise<T>,
@@ -6,28 +6,47 @@ export function usePoll<T>(
   enabled: boolean = true
 ): { data: T | null; loading: boolean; error: string | null; refresh: () => void } {
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const fetcherRef = useRef(fetcher);
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
+
+  const runRefresh = useCallback(async (showLoading: boolean) => {
     try {
-      setLoading(true);
-      const result = await fetcher();
+      if (showLoading) {
+        setLoading(true);
+      }
+      const result = await fetcherRef.current();
       setData(result);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
-  }, [fetcher]);
+  }, []);
+
+  const refresh = useCallback(() => {
+    void runRefresh(true);
+  }, [runRefresh]);
 
   useEffect(() => {
-    if (!enabled) return;
-    refresh();
-    const timer = setInterval(refresh, interval);
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
+    void runRefresh(true);
+    const timer = setInterval(() => {
+      void runRefresh(false);
+    }, interval);
     return () => clearInterval(timer);
-  }, [refresh, interval, enabled]);
+  }, [runRefresh, interval, enabled]);
 
   return { data, loading, error, refresh };
 }

@@ -20,19 +20,16 @@ function ToolWelcomeBanner() {
         background: 'linear-gradient(135deg, #0D3B6E 0%, #1E5FAA 50%, #185FA5 100%)',
       }}
     >
-      {/* Ambient glow */}
       <div
         className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full opacity-25"
         style={{ background: 'radial-gradient(circle, #60A5FA 0%, transparent 70%)' }}
       />
-      {/* Noise overlay */}
       <div
         className="absolute inset-0 opacity-[0.04]"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
         }}
       />
-      {/* Large decorative icon */}
       <div className="pointer-events-none absolute -bottom-4 -right-4 opacity-10">
         <Database size={180} strokeWidth={0.8} className="text-white" />
       </div>
@@ -46,8 +43,10 @@ function ToolWelcomeBanner() {
             <Camera size={26} className="text-white" strokeWidth={1.5} />
           </div>
           <div className="flex-1">
-            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2 tracking-wide"
-              style={{ background: 'rgba(147,197,253,0.15)', color: '#93C5FD' }}>
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2 tracking-wide"
+              style={{ background: 'rgba(147,197,253,0.15)', color: '#93C5FD' }}
+            >
               REST API
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white leading-tight">
@@ -62,7 +61,6 @@ function ToolWelcomeBanner() {
           </div>
         </div>
 
-        {/* Feature pills */}
         <div className="mt-6 flex flex-wrap gap-2">
           {[
             { icon: Globe, label: 'REST Endpoint Capture' },
@@ -97,7 +95,7 @@ export function ConfigPage() {
   const canCreate = usePermission('create_snapshot');
 
   useEffect(() => {
-    loadSnapshots();
+    void loadSnapshots();
   }, []);
 
   async function loadSnapshots() {
@@ -119,7 +117,7 @@ export function ConfigPage() {
       setModalOpen(false);
       setEndpoint('');
       setDescription('');
-      loadSnapshots();
+      void loadSnapshots();
     }
     setSubmitting(false);
   }
@@ -137,8 +135,8 @@ export function ConfigPage() {
       <ToolWelcomeBanner />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">Snapshots</h2>
-          <p className="text-sm text-[#64748B] mt-0.5">Capture and compare system configurations.</p>
+          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Snapshots</h2>
+          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Capture and compare system configurations.</p>
         </div>
         {canCreate && (
           <button
@@ -151,7 +149,7 @@ export function ConfigPage() {
         )}
       </div>
 
-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
+      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-4">
             <SkeletonTable columns={5} rows={4} />
@@ -175,38 +173,38 @@ export function ConfigPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#F3F4F6]">
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Snapshot ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">REST Endpoint</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Timestamp</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Delta</th>
+                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Snapshot ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">REST Endpoint</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Timestamp</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Delta</th>
                   <th className="w-16"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
                 {snapshots.map(snap => (
                   <tr
                     key={snap.id}
-                    className="hover:bg-[#EAF2FB] cursor-pointer transition-colors"
+                    className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 cursor-pointer transition-colors"
                     onClick={() => handleRowClick(snap)}
                   >
-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{snap.id}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] truncate max-w-[240px]">{snap.endpoint}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B]">{new Date(snap.timestamp).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{snap.id}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400 truncate max-w-[240px]">{snap.endpoint}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{new Date(snap.timestamp).toLocaleString()}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={snap.status} pulse={snap.status === 'Processing'} />
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#0F172A]">
+                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100">
                       {snap.delta.added > 0 && <span className="text-[#0F6E56]">+{snap.delta.added}</span>}
                       {snap.delta.removed > 0 && <span className="text-[#993C1D] ml-1">-{snap.delta.removed}</span>}
                       {snap.delta.changed > 0 && <span className="text-[#BA7517] ml-1">~{snap.delta.changed}</span>}
                       {snap.delta.added === 0 && snap.delta.removed === 0 && snap.delta.changed === 0 && (
-                        <span className="text-[#94A3B8]">0 changed</span>
+                        <span className="text-[#94A3B8] dark:text-slate-500">0 changed</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <ChevronRight size={16} className="text-[#94A3B8]" />
+                      <ChevronRight size={16} className="text-[#94A3B8] dark:text-slate-500" />
                     </td>
                   </tr>
                 ))}
@@ -216,43 +214,42 @@ export function ConfigPage() {
         )}
       </div>
 
-      {/* New Snapshot Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/45" onClick={() => setModalOpen(false)} />
-          <div className="relative bg-white rounded-xl p-6 w-full max-w-[560px] mx-4 shadow-xl" style={{ animation: 'scale-in 200ms ease-out' }}>
+          <div className="relative bg-white dark:bg-slate-950 rounded-xl p-6 w-full max-w-[560px] mx-4 shadow-xl border border-transparent dark:border-white/10" style={{ animation: 'scale-in 200ms ease-out' }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-[#0F172A]">Create New Snapshot</h2>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X size={18} className="text-[#64748B]" />
+              <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">Create New Snapshot</h2>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
+                <X size={18} className="text-[#64748B] dark:text-slate-400" />
               </button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">REST Endpoint URL</label>
+                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">REST Endpoint URL</label>
                 <input
                   type="url"
                   value={endpoint}
                   onChange={e => setEndpoint(e.target.value)}
                   placeholder="https://api.company.com/v1/config"
-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
+                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Description <span className="text-[#94A3B8] font-normal">(optional)</span></label>
+                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Description <span className="text-[#94A3B8] dark:text-slate-500 font-normal">(optional)</span></label>
                 <textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] resize-none"
+                  className="w-full px-3 py-2 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] resize-none"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-[#64748B] hover:bg-gray-50 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-[#64748B] dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
                 >
                   Cancel
                 </button>
@@ -269,44 +266,43 @@ export function ConfigPage() {
         </div>
       )}
 
-      {/* Diff Slide-over */}
       {selectedSnapshot && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/45" onClick={() => setSelectedSnapshot(null)} />
           <div
-            className="relative bg-white w-full max-w-[480px] h-full shadow-xl overflow-auto"
+            className="relative bg-white dark:bg-slate-950 w-full max-w-[480px] h-full shadow-xl overflow-auto border-l border-transparent dark:border-white/10"
             style={{ animation: 'slide-in-right 250ms cubic-bezier(0.32, 0.72, 0, 1)' }}
           >
-            <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-6 py-4 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-white dark:bg-slate-950 border-b border-[#E2E8F0] dark:border-white/10 px-6 py-4 flex items-center justify-between z-10">
               <div>
-                <h2 className="text-lg font-semibold text-[#0F172A]">{selectedSnapshot.id}</h2>
-                <p className="text-sm text-[#64748B]">{selectedSnapshot.endpoint}</p>
+                <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">{selectedSnapshot.id}</h2>
+                <p className="text-sm text-[#64748B] dark:text-slate-400">{selectedSnapshot.endpoint}</p>
               </div>
-              <button onClick={() => setSelectedSnapshot(null)} className="p-1 hover:bg-gray-100 rounded">
-                <X size={18} className="text-[#64748B]" />
+              <button onClick={() => setSelectedSnapshot(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
+                <X size={18} className="text-[#64748B] dark:text-slate-400" />
               </button>
             </div>
             <div className="p-6">
               {diffLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
+                    <div key={i} className="h-16 bg-gray-100 dark:bg-slate-800 rounded animate-pulse" />
                   ))}
                 </div>
               ) : diffData.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle2 size={48} className="text-[#CBD5E1] mx-auto mb-3" />
-                  <p className="text-sm text-[#64748B]">No changes detected in this snapshot.</p>
+                  <CheckCircle2 size={48} className="text-[#CBD5E1] dark:text-slate-600 mx-auto mb-3" />
+                  <p className="text-sm text-[#64748B] dark:text-slate-400">No changes detected in this snapshot.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {diffData.map((diff, i) => (
-                    <div key={i} className="border border-[#E2E8F0] rounded-lg p-4">
+                    <div key={i} className="border border-[#E2E8F0] dark:border-white/10 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
                         {diff.type === 'added' && <ArrowUp size={14} className="text-[#0F6E56]" />}
                         {diff.type === 'removed' && <ArrowDown size={14} className="text-[#993C1D]" />}
                         {diff.type === 'changed' && <AlertCircle size={14} className="text-[#BA7517]" />}
-                        <span className="text-sm font-medium text-[#0F172A]">{diff.field}</span>
+                        <span className="text-sm font-medium text-[#0F172A] dark:text-slate-100">{diff.field}</span>
                         <span
                           className="text-xs font-medium px-1.5 py-0.5 rounded capitalize"
                           style={{
@@ -318,10 +314,10 @@ export function ConfigPage() {
                         </span>
                       </div>
                       {diff.oldValue !== null && (
-                        <div className="text-sm text-[#64748B] line-through">{String(diff.oldValue)}</div>
+                        <div className="text-sm text-[#64748B] dark:text-slate-400 line-through">{String(diff.oldValue)}</div>
                       )}
                       {diff.newValue !== null && (
-                        <div className="text-sm font-medium text-[#0F172A]">{String(diff.newValue)}</div>
+                        <div className="text-sm font-medium text-[#0F172A] dark:text-slate-100">{String(diff.newValue)}</div>
                       )}
                     </div>
                   ))}

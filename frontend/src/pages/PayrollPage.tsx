@@ -89,7 +89,7 @@ export function PayrollPage() {
   const canResolve = usePermission('run_reconciliation');
 
   useEffect(() => {
-    loadExceptions();
+    void loadExceptions();
   }, []);
 
   async function loadExceptions() {
@@ -106,7 +106,7 @@ export function PayrollPage() {
       toast.error(res.error.message);
     } else {
       toast.success(`Reconciliation complete: ${res.data.matchRate}% match rate`);
-      loadExceptions();
+      void loadExceptions();
     }
     setReconciling(false);
   }
@@ -117,7 +117,7 @@ export function PayrollPage() {
       toast.error(res.error.message);
     } else {
       toast.success(`Exception ${id} marked as resolved`);
-      loadExceptions();
+      void loadExceptions();
     }
   }
 
@@ -129,8 +129,8 @@ export function PayrollPage() {
       <ToolWelcomeBanner />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">Reconciliation Summary</h2>
-          <p className="text-sm text-[#64748B] mt-0.5">Compare pre/post migration payroll records.</p>
+          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Reconciliation Summary</h2>
+          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Compare pre/post migration payroll records.</p>
         </div>
         {canRun && (
           <button
@@ -144,7 +144,6 @@ export function PayrollPage() {
         )}
       </div>
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
           label="Total Employees"
@@ -173,11 +172,10 @@ export function PayrollPage() {
         />
       </div>
 
-      {/* Exceptions Table */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-          <h2 className="text-base font-semibold text-[#0F172A]">Exceptions</h2>
-          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#64748B] hover:text-[#185FA5] hover:bg-[#EAF2FB] rounded-md transition-colors">
+      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Exceptions</h2>
+          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#64748B] dark:text-slate-400 hover:text-[#185FA5] hover:bg-[#EAF2FB] dark:hover:bg-slate-900 rounded-md transition-colors">
             <Download size={14} />
             Export CSV
           </button>
@@ -196,20 +194,20 @@ export function PayrollPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#F3F4F6]">
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Employee ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Field</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Legacy Value</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">New Value</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
+                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Employee ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Field</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Legacy Value</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">New Value</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
                   <th className="w-20"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
                 {exceptions.map(exc => (
-                  <tr key={exc.id} className="hover:bg-[#EAF2FB] transition-colors">
-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{exc.employeeId}</td>
-                    <td className="px-4 py-3 text-sm text-[#0F172A] capitalize">{exc.field.replace('_', ' ')}</td>
+                  <tr key={exc.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
+                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{exc.employeeId}</td>
+                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100 capitalize">{exc.field.replace('_', ' ')}</td>
                     <td className="px-4 py-3">
                       <DataReveal value={exc.legacyValue} isSensitive={exc.isSensitive} />
                     </td>
@@ -223,7 +221,7 @@ export function PayrollPage() {
                       {canResolve && exc.status !== 'Resolved' && (
                         <button
                           onClick={() => handleResolve(exc.id)}
-                          className="p-1.5 hover:bg-[rgba(15,110,86,0.1)] rounded text-[#64748B] hover:text-[#0F6E56] transition-colors"
+                          className="p-1.5 hover:bg-[rgba(15,110,86,0.1)] dark:hover:bg-[rgba(15,110,86,0.16)] rounded text-[#64748B] dark:text-slate-400 hover:text-[#0F6E56] transition-colors"
                           title="Mark as resolved"
                         >
                           <CheckCircle2 size={16} />

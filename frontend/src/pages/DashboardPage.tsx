@@ -93,18 +93,18 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0A0F1C] relative overflow-hidden transition-colors">
       {/* Ambient background orbs */}
       <div
-        className="pointer-events-none absolute -top-64 -left-64 h-[600px] w-[600px] rounded-full opacity-20"
+        className="pointer-events-none absolute -top-64 -left-64 h-[600px] w-[600px] rounded-full opacity-15 dark:opacity-20"
         style={{ background: 'radial-gradient(circle, #185FA5 0%, transparent 70%)' }}
       />
       <div
-        className="pointer-events-none absolute -bottom-64 -right-64 h-[600px] w-[600px] rounded-full opacity-15"
+        className="pointer-events-none absolute -bottom-64 -right-64 h-[600px] w-[600px] rounded-full opacity-10 dark:opacity-15"
         style={{ background: 'radial-gradient(circle, #0F6E56 0%, transparent 70%)' }}
       />
       <div
-        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[900px] w-[900px] rounded-full opacity-5"
+        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[900px] w-[900px] rounded-full opacity-[0.04] dark:opacity-5"
         style={{ background: 'radial-gradient(circle, #BA7517 0%, transparent 70%)' }}
       />
 
@@ -112,14 +112,14 @@ export function DashboardPage() {
 
         {/* Header */}
         <div className="mb-10 lg:mb-14">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 mb-5 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/75 px-3 py-1.5 mb-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-medium text-white/60 tracking-wide uppercase">MigrateOS Platform</span>
+            <span className="text-xs font-medium text-slate-600 tracking-wide uppercase dark:text-white/60">MigrateOS Platform</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white leading-tight">
             Hi, <span className="bg-gradient-to-r from-[#60A5FA] to-[#34D399] bg-clip-text text-transparent">{firstName}</span> 👋
           </h1>
-          <p className="mt-3 text-base sm:text-lg text-white/50 max-w-xl">
+          <p className="mt-3 text-base sm:text-lg text-slate-600 dark:text-white/50 max-w-xl">
             Welcome to the ERP Migration Platform. Choose a tool below to get started.
           </p>
         </div>
@@ -133,7 +133,7 @@ export function DashboardPage() {
               <Link
                 key={tool.path}
                 to={tool.path}
-                className="group relative block rounded-2xl overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                className="group relative block rounded-2xl overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-[#185FA5]/40 dark:focus-visible:ring-white/40"
                 style={{ '--glow': tool.glowColor } as React.CSSProperties}
               >
                 {/* Card gradient background */}
@@ -239,17 +239,17 @@ export function DashboardPage() {
         </div>
 
         {visibleTools.length === 0 && (
-          <div className="rounded-lg border border-white/10 bg-white/5 px-6 py-10 text-center">
-            <ShieldCheck size={32} className="mx-auto text-white/35 mb-3" />
-            <h2 className="text-lg font-semibold text-white">No tools assigned</h2>
-            <p className="mt-2 text-sm text-white/50">
+          <div className="rounded-lg border border-slate-200 bg-white/75 px-6 py-10 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
+            <ShieldCheck size={32} className="mx-auto text-slate-400 dark:text-white/35 mb-3" />
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">No tools assigned</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-white/50">
               Ask an administrator to assign access from the Admin Control Panel.
             </p>
           </div>
         )}
 
         {/* Footer note */}
-        <p className="mt-10 text-center text-xs text-white/25">
+        <p className="mt-10 text-center text-xs text-slate-500 dark:text-white/25">
           MigrateOS Enterprise Data Migration Platform · All sessions are monitored and logged.
         </p>
       </div>
