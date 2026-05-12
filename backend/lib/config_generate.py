@@ -165,7 +165,8 @@ def _run_single_sql(
     sqltext,
     sheets,
     errors,
-    lock
+    lock,
+    http_session=None
 ):
     sheet_name = f"{mod} - {name}"
 
@@ -175,7 +176,8 @@ def _run_single_sql(
             session_token,
             dyn_report_path,
             dyn_template,
-            sqltext
+            sqltext,
+            http_session=http_session
         )
 
         df = csv_to_df(csv_data)
@@ -207,6 +209,7 @@ def run_sqls_config_generation(
     dyn_template = "CSV"
     
     session_token = None
+    http_session = None
     sheets = {}
     errors = []
     lock = Lock()
@@ -217,7 +220,7 @@ def run_sqls_config_generation(
     MAX_THREADS = min(DEFAULT_COMPARE_THREADS, len(sql_items))
 
     try:
-        session_token = bi_login(url, username, password)
+        session_token, http_session = bi_login(url, username, password)
         soap_url = get_bip_PublicReportService_url(url)
 
         if not session_token:
@@ -240,7 +243,8 @@ def run_sqls_config_generation(
                     sqltext,
                     sheets,
                     errors,
-                    lock
+                    lock,
+                    http_session
                 )
                 for mod, name, sqltext in sql_items
             ]
@@ -251,7 +255,7 @@ def run_sqls_config_generation(
     finally:
         if session_token:
             try:
-                bi_logout(url, session_token)
+                bi_logout(url, session_token, http_session=http_session)
             except:
                 pass
 

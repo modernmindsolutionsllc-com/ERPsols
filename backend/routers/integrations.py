@@ -3,13 +3,22 @@ routers/integrations.py
 ───────────────────────
 Oracle Fusion integration micro-service.
 
-Provides a secure credential vault endpoint that encrypts Oracle
-credentials using Fernet (AES-128-CBC) before they ever touch the database.
-Accessible by enterprise + admin users (Tier 2).
+Provides a secure credential vault with FULL CRUD for multi-environment
+Oracle sessions. Passwords are encrypted using Fernet (AES-128-CBC)
+before they ever touch the database.
+
+Endpoints:
+  GET    /oracle/sessions         → List all sessions for the user
+  POST   /oracle/sessions         → Create or update an environment
+  DELETE /oracle/sessions/{name}  → Delete a specific environment
+  DELETE /oracle/sessions         → Wipe ALL sessions for the user
+  POST   /oracle/connect          → Legacy single-connect (preserved)
+  GET    /oracle/status           → Connection status check
 """
 
 import os
 from datetime import datetime, timezone
+from typing import List
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,7 +26,13 @@ from sqlalchemy.orm import Session
 
 from database import get_db, OracleCredential
 from dependencies import require_user
-from Schemas import OracleConnectRequest, OracleConnectResponse, MessageResponse
+from Schemas import (
+    OracleConnectRequest,
+    OracleConnectResponse,
+    OracleSessionCreate,
+    OracleSessionResponse,
+    MessageResponse,
+)
 
 
 router = APIRouter(
@@ -29,21 +44,11 @@ router = APIRouter(
 # ── Fernet Encryption Engine ──────────────────────────────────────────────────
 
 def _get_fernet() -> Fernet:
-    """
-    Loads the Fernet key from environment. This key MUST be a valid
-    32-byte URL-safe base64-encoded string.
-
-    Generate one with:
-        python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-
-    Then set it in your .env as:
-        ORACLE_FERNET_KEY=<generated_key>
-    """
     key = os.environ.get("ORACLE_FERNET_KEY")
     if not key:
         raise RuntimeError(
             "ORACLE_FERNET_KEY is not set in environment. "
-            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
     return Fernet(key.encode())
 
@@ -55,7 +60,7 @@ def encrypt_password(plain_password: str) -> bytes:
 
 
 def decrypt_password(encrypted_password: bytes) -> str:
-    """Decrypt Fernet ciphertext back into plain-text. Used internally for ETL automation."""
+    """Decrypt Fernet ciphertext back into plain-text. Used internally for ETL."""
     f = _get_fernet()
     try:
         return f.decrypt(encrypted_password).decode("utf-8")
@@ -63,7 +68,153 @@ def decrypt_password(encrypted_password: bytes) -> str:
         raise RuntimeError("Failed to decrypt Oracle password — key may have been rotated.")
 
 
-# ── POST /oracle/connect ──────────────────────────────────────────────────────
+# ── Intelligent URL Formatter ─────────────────────────────────────────────────
+
+_BIP_WSDL_SUFFIX = "/xmlpserver/services/ExternalReportWSSService"
+
+
+def normalize_oracle_url(raw_url: str) -> str:
+    """
+    Convert any Oracle Cloud base URL into the correct BIP SOAP WSDL endpoint.
+
+    Handles three cases:
+      1. Already complete  → return as-is
+      2. Ends with /xmlpserver → append /services/ExternalReportWSSService
+      3. Base URL only     → append full /xmlpserver/services/ExternalReportWSSService
+    """
+    url = raw_url.strip().rstrip("/")
+
+    if url.endswith(_BIP_WSDL_SUFFIX):
+        return url
+
+    if url.endswith("/xmlpserver"):
+        return url + "/services/ExternalReportWSSService"
+
+    return url + _BIP_WSDL_SUFFIX
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MULTI-ENVIRONMENT SESSION CRUD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/oracle/sessions", response_model=List[OracleSessionResponse])
+def list_oracle_sessions(
+    current_user: dict = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Return all Oracle environment sessions for the authenticated user."""
+    user_id = int(current_user["sub"])
+    sessions = (
+        db.query(OracleCredential)
+        .filter(OracleCredential.user_id == user_id)
+        .order_by(OracleCredential.created_at.desc())
+        .all()
+    )
+    return sessions
+
+
+@router.post("/oracle/sessions", response_model=OracleSessionResponse)
+def upsert_oracle_session(
+    body: OracleSessionCreate,
+    current_user: dict = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create or update an Oracle environment session.
+
+    If env_name already exists for this user, the existing record is
+    updated (upsert). Password is encrypted via Fernet BEFORE db write.
+    """
+    user_id = int(current_user["sub"])
+    normalized_url = normalize_oracle_url(body.oracle_url)
+    encrypted_pw = encrypt_password(body.oracle_password)
+    now = datetime.now(timezone.utc)
+
+    lookup_name = body.old_env_name if body.old_env_name else body.env_name
+    existing = (
+        db.query(OracleCredential)
+        .filter(
+            OracleCredential.user_id == user_id,
+            OracleCredential.env_name == lookup_name,
+        )
+        .first()
+    )
+
+    if existing:
+        existing.env_name = body.env_name
+        existing.oracle_url = normalized_url
+        existing.oracle_username = body.oracle_username
+        existing.encrypted_oracle_password = encrypted_pw
+        existing.updated_at = now
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        credential = OracleCredential(
+            user_id=user_id,
+            env_name=body.env_name,
+            oracle_url=normalized_url,
+            oracle_username=body.oracle_username,
+            encrypted_oracle_password=encrypted_pw,
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(credential)
+        db.commit()
+        db.refresh(credential)
+        return credential
+
+
+@router.delete("/oracle/sessions/{env_name}", response_model=MessageResponse)
+def delete_oracle_session(
+    env_name: str,
+    current_user: dict = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a specific Oracle environment session by env_name."""
+    user_id = int(current_user["sub"])
+    credential = (
+        db.query(OracleCredential)
+        .filter(
+            OracleCredential.user_id == user_id,
+            OracleCredential.env_name == env_name,
+        )
+        .first()
+    )
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Oracle environment '{env_name}' not found.",
+        )
+
+    db.delete(credential)
+    db.commit()
+    return MessageResponse(message=f"Oracle environment '{env_name}' deleted successfully.")
+
+
+@router.delete("/oracle/sessions", response_model=MessageResponse)
+def delete_all_oracle_sessions(
+    current_user: dict = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Wipe ALL Oracle sessions for the authenticated user."""
+    user_id = int(current_user["sub"])
+    count = (
+        db.query(OracleCredential)
+        .filter(OracleCredential.user_id == user_id)
+        .delete()
+    )
+    db.commit()
+    return MessageResponse(message=f"Deleted {count} Oracle environment(s) from the vault.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LEGACY ENDPOINTS (preserved for backward compatibility)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.post("/oracle/connect", response_model=OracleConnectResponse)
 def connect_oracle(
@@ -72,31 +223,25 @@ def connect_oracle(
     db: Session = Depends(get_db),
 ):
     """
-    Receive raw Oracle credentials, IMMEDIATELY encrypt the password,
-    and upsert the encrypted record into the vault.
-
-    Security:
-      • Password is encrypted via Fernet (AES-128-CBC) BEFORE db.add()
-      • Plain-text password is NEVER logged, stored, or returned
-      • Only enterprise + admin roles can call this endpoint
+    Legacy single-connect endpoint. Now delegates to the multi-env upsert
+    logic internally so data stays consistent.
     """
     user_id = int(current_user["sub"])
-
-    # Encrypt password BEFORE touching the database
+    normalized_url = normalize_oracle_url(body.oracle_url)
     encrypted_pw = encrypt_password(body.oracle_password)
+    now = datetime.now(timezone.utc)
 
-    # Upsert: update existing or create new
     existing = (
         db.query(OracleCredential)
-        .filter(OracleCredential.user_id == user_id)
+        .filter(
+            OracleCredential.user_id == user_id,
+            OracleCredential.env_name == body.env_name,
+        )
         .first()
     )
 
-    now = datetime.now(timezone.utc)
-
     if existing:
-        existing.env_name = body.env_name
-        existing.oracle_url = body.oracle_url
+        existing.oracle_url = normalized_url
         existing.oracle_username = body.oracle_username
         existing.encrypted_oracle_password = encrypted_pw
         existing.updated_at = now
@@ -104,9 +249,10 @@ def connect_oracle(
         credential = OracleCredential(
             user_id=user_id,
             env_name=body.env_name,
-            oracle_url=body.oracle_url,
+            oracle_url=normalized_url,
             oracle_username=body.oracle_username,
             encrypted_oracle_password=encrypted_pw,
+            is_active=True,
             created_at=now,
             updated_at=now,
         )
@@ -116,25 +262,26 @@ def connect_oracle(
 
     return OracleConnectResponse(
         message="Oracle credentials encrypted and saved successfully.",
-        oracle_url=body.oracle_url,
+        oracle_url=normalized_url,
         env_name=body.env_name,
         oracle_username=body.oracle_username,
         connected_at=now,
     )
 
 
-# ── GET /oracle/status ────────────────────────────────────────────────────────
-
 @router.get("/oracle/status", response_model=dict)
 def oracle_status(
     current_user: dict = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    """Check if the current user has stored Oracle credentials (without exposing them)."""
+    """Check if the current user has any stored Oracle credentials."""
     user_id = int(current_user["sub"])
+
+    # Return the most recently updated session
     existing = (
         db.query(OracleCredential)
         .filter(OracleCredential.user_id == user_id)
+        .order_by(OracleCredential.updated_at.desc())
         .first()
     )
 

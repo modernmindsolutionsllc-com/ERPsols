@@ -54,7 +54,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       navigate(-1);
       return;
     }
-
     navigate(defaultBackPath);
   };
 
@@ -69,7 +68,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
       )}
 
-      {!isBaseUser && (
+      {!isBaseUser && !isAdminRole && (
         <aside
           className={`fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0F172A] dark:bg-[#081122] border-r border-white/5 dark:border-white/10 flex flex-col transition-transform duration-250 ease-out ${
             mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -143,7 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </button>
             )}
 
-            {!isBaseUser && (
+            {!isBaseUser && !isAdminRole && (
               <button
                 className="lg:hidden text-white/80 hover:text-white"
                 onClick={() => setMobileOpen(true)}
@@ -156,7 +155,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="text-white font-semibold text-base">MigrateOS</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <ThemeToggle />
 
             {isBaseUser && (
@@ -185,7 +184,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {user.role}
                 </span>
                 <div className="size-8 rounded-full bg-white flex items-center justify-center text-[#0F172A] text-sm font-semibold ml-1">
-                  {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  {(user.name || 'U').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                 </div>
                 <button
                   onClick={handleLogout}

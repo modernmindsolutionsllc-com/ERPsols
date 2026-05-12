@@ -105,10 +105,11 @@ class User(Base):
     is_restricted        = Column(Boolean, nullable=False, default=False)
     last_active_at       = Column(DateTime(timezone=True), nullable=True)
 
-    role_rel        = relationship("Role", back_populates="users")
-    tool_access     = relationship("UserToolAccess", back_populates="user", cascade="all, delete-orphan")
-    snapshots       = relationship("ConfigSnapshot", back_populates="owner")
-    payroll_records = relationship("PayrollRecord", back_populates="owner")
+    role_rel           = relationship("Role", back_populates="users")
+    tool_access        = relationship("UserToolAccess", back_populates="user", cascade="all, delete-orphan")
+    snapshots          = relationship("ConfigSnapshot", back_populates="owner")
+    payroll_records    = relationship("PayrollRecord", back_populates="owner")
+    oracle_credentials = relationship("OracleCredential", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserToolAccess(Base):
@@ -148,27 +149,34 @@ class PayrollRecord(Base):
     owner = relationship("User", back_populates="payroll_records")
 
 
-# ── FastAPI Dependency – injectable DB session ─────────────────────────────────
+# ── Oracle Credentials (Multi-Tenant: One User → Many Environments) ────────────
 
 class OracleCredential(Base):
     """
     Stores Fernet-encrypted Oracle Fusion credentials.
+    Supports multi-tenancy: each user can store credentials for multiple
+    environments (e.g., Production, UAT, Development).
+
     The encrypted_oracle_password column holds AES-encrypted ciphertext
     — the plain text password NEVER touches the database.
     """
     __tablename__ = "oracle_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "env_name", name="uq_oracle_user_env"),
+    )
 
-    id                       = Column(Integer, primary_key=True, autoincrement=True)
-    user_id                  = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    env_name                 = Column(String, nullable=False, default="Demo Oracle Fusion")
-    oracle_url               = Column(String, nullable=False, default="https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com")
-    oracle_username          = Column(String, nullable=False)
+    id                        = Column(Integer, primary_key=True, autoincrement=True)
+    user_id                   = Column(Integer, ForeignKey("users.id"), nullable=False)
+    env_name                  = Column(String, nullable=False, default="Demo Oracle Fusion")
+    oracle_url                = Column(String, nullable=False, default="https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com")
+    oracle_username           = Column(String, nullable=False)
     encrypted_oracle_password = Column(LargeBinary, nullable=False)
-    created_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+    is_active                 = Column(Boolean, nullable=False, default=True)
+    created_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                                       onupdate=lambda: datetime.now(timezone.utc))
 
-    user = relationship("User", backref="oracle_credential")
+    user = relationship("User", back_populates="oracle_credentials")
 
 
 class BipReportConfig(Base):
@@ -283,11 +291,13 @@ def init_db():
     # ── Phase 2: SQLAlchemy create new tables (config_snapshots, etc.) ─────────
     Base.metadata.create_all(bind=engine)
 
+    # ── Phase 3: Safe ALTER migrations for columns added after initial release ─
     conn = get_connection()
     cursor = conn.cursor()
     _safe_alter_columns(cursor, "oracle_credentials", [
         ("env_name", "TEXT DEFAULT 'Demo Oracle Fusion'"),
         ("oracle_url", "TEXT DEFAULT 'https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com'"),
+        ("is_active", "INTEGER DEFAULT 1"),
     ])
     _safe_alter_columns(cursor, "bip_report_configs", [
         ("sub_module", "TEXT"),
@@ -295,6 +305,16 @@ def init_db():
         ("encrypted_sql_query", "BLOB"),
         ("is_active", "INTEGER DEFAULT 1"),
     ])
+
+    # ── Drop the old unique constraint on user_id only (migrate to multi-env) ──
+    # SQLite doesn't support DROP CONSTRAINT, so we check if the old index exists
+    # and drop it. The new UniqueConstraint (user_id, env_name) is created by
+    # Base.metadata.create_all() above.
+    try:
+        cursor.execute("DROP INDEX IF EXISTS ix_oracle_credentials_user_id")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 

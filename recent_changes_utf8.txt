@@ -1,0 +1,2800 @@
+﻿diff --git a/backend/Auth_utils.py b/backend/Auth_utils.py
+index 2f65dab..79ac3af 100644
+--- a/backend/Auth_utils.py
++++ b/backend/Auth_utils.py
+@@ -161,12 +161,28 @@ def send_otp_email(user_email: str, otp_code: str) -> None:
+     context = ssl.create_default_context()
+ 
+     try:
+-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+-            server.login(sender_email, sender_password)
+-            server.sendmail(sender_email, user_email, msg.as_string())
++        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), context)
++    except ssl.SSLCertVerificationError as exc:
++        if os.environ.get("SMTP_ALLOW_INSECURE_TLS", "").lower() not in {"1", "true", "yes"}:
++            raise RuntimeError("SMTP TLS certificate verification failed.") from exc
++
++        insecure_context = ssl._create_unverified_context()
++        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), insecure_context)
+     except smtplib.SMTPAuthenticationError as exc:
+         raise RuntimeError(
+             "SMTP authentication failed. Check SENDER_EMAIL and SENDER_EMAIL_PASSWORD."
+         ) from exc
+     except smtplib.SMTPException as exc:
+         raise RuntimeError(f"Failed to send OTP email: {exc}") from exc
++
++
++def _send_smtp_email(
++    sender_email: str,
++    sender_password: str,
++    user_email: str,
++    message: str,
++    context: ssl.SSLContext,
++) -> None:
++    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
++        server.login(sender_email, sender_password)
++        server.sendmail(sender_email, user_email, message)
+diff --git a/backend/Schemas.py b/backend/Schemas.py
+index a135ad1..e8ce7d4 100644
+--- a/backend/Schemas.py
++++ b/backend/Schemas.py
+@@ -215,6 +215,8 @@ class DisconnectRequest(BaseModel):
+ 
+ class OracleConnectRequest(BaseModel):
+     """Receives raw Oracle credentials from the frontend for encryption."""
++    oracle_url: str = "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
++    env_name: str = "Demo Oracle Fusion"
+     oracle_username: str
+     oracle_password: str
+ 
+@@ -225,6 +227,18 @@ class OracleConnectRequest(BaseModel):
+             raise ValueError("Oracle username cannot be empty.")
+         return v.strip()
+ 
++    @field_validator("oracle_url")
++    @classmethod
++    def url_not_empty(cls, v: str) -> str:
++        if not v.strip():
++            raise ValueError("Oracle URL cannot be empty.")
++        return v.strip().rstrip("/")
++
++    @field_validator("env_name")
++    @classmethod
++    def env_name_not_empty(cls, v: str) -> str:
++        return v.strip() or "Demo Oracle Fusion"
++
+     @field_validator("oracle_password")
+     @classmethod
+     def password_not_empty(cls, v: str) -> str:
+@@ -236,6 +250,8 @@ class OracleConnectRequest(BaseModel):
+ class OracleConnectResponse(BaseModel):
+     """Confirms credential storage without leaking any secrets."""
+     message: str
++    oracle_url: str
++    env_name: str
+     oracle_username: str
+     connected_at: datetime
+ 
+@@ -387,6 +403,8 @@ class DisconnectRequest(BaseModel):
+ 
+ class OracleConnectRequest(BaseModel):
+     """Receives raw Oracle credentials from the frontend for encryption."""
++    oracle_url: str = "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
++    env_name: str = "Demo Oracle Fusion"
+     oracle_username: str
+     oracle_password: str
+ 
+@@ -397,6 +415,18 @@ class OracleConnectRequest(BaseModel):
+             raise ValueError("Oracle username cannot be empty.")
+         return v.strip()
+ 
++    @field_validator("oracle_url")
++    @classmethod
++    def url_not_empty(cls, v: str) -> str:
++        if not v.strip():
++            raise ValueError("Oracle URL cannot be empty.")
++        return v.strip().rstrip("/")
++
++    @field_validator("env_name")
++    @classmethod
++    def env_name_not_empty(cls, v: str) -> str:
++        return v.strip() or "Demo Oracle Fusion"
++
+     @field_validator("oracle_password")
+     @classmethod
+     def password_not_empty(cls, v: str) -> str:
+@@ -408,6 +438,8 @@ class OracleConnectRequest(BaseModel):
+ class OracleConnectResponse(BaseModel):
+     """Confirms credential storage without leaking any secrets."""
+     message: str
++    oracle_url: str
++    env_name: str
+     oracle_username: str
+     connected_at: datetime
+ 
+@@ -418,14 +450,27 @@ class OracleConnectResponse(BaseModel):
+ 
+ class BipReportBase(BaseModel):
+     module: str
++    sub_module: Optional[str] = None
++    report_name: str
++    description: Optional[str] = None
++
++class BipReportCreate(BaseModel):
++    module: str
++    sub_module: Optional[str] = None
+     report_name: str
++    description: Optional[str] = None
+     sql_query: str
+ 
+-class BipReportCreate(BipReportBase):
+-    pass
++    @field_validator("module", "report_name", "sql_query")
++    @classmethod
++    def required_text_not_empty(cls, v: str) -> str:
++        if not v.strip():
++            raise ValueError("This field cannot be empty.")
++        return v.strip()
+ 
+ class BipReportResponse(BipReportBase):
+     id: int
++    is_active: bool
+     created_at: datetime
+ 
+     model_config = {"from_attributes": True}
+@@ -433,3 +478,16 @@ class BipReportResponse(BipReportBase):
+ 
+ class ExecuteReportsRequest(BaseModel):
+     report_ids: list[int]
++
++
++class DirectBipSqlRequest(BaseModel):
++    module: str = "Ad Hoc"
++    report_name: str = "Ad Hoc SQL"
++    sql_query: str
++
++    @field_validator("module", "report_name", "sql_query")
++    @classmethod
++    def required_text_not_empty(cls, v: str) -> str:
++        if not v.strip():
++            raise ValueError("This field cannot be empty.")
++        return v.strip()
+diff --git a/backend/__pycache__/Auth.cpython-314.pyc b/backend/__pycache__/Auth.cpython-314.pyc
+deleted file mode 100644
+index 195cc9b..0000000
+Binary files a/backend/__pycache__/Auth.cpython-314.pyc and /dev/null differ
+diff --git a/backend/__pycache__/Auth_utils.cpython-314.pyc b/backend/__pycache__/Auth_utils.cpython-314.pyc
+deleted file mode 100644
+index 5f38ab5..0000000
+Binary files a/backend/__pycache__/Auth_utils.cpython-314.pyc and /dev/null differ
+diff --git a/backend/__pycache__/Schemas.cpython-314.pyc b/backend/__pycache__/Schemas.cpython-314.pyc
+deleted file mode 100644
+index 5453506..0000000
+Binary files a/backend/__pycache__/Schemas.cpython-314.pyc and /dev/null differ
+diff --git a/backend/__pycache__/database.cpython-314.pyc b/backend/__pycache__/database.cpython-314.pyc
+deleted file mode 100644
+index 26a9bbc..0000000
+Binary files a/backend/__pycache__/database.cpython-314.pyc and /dev/null differ
+diff --git a/backend/__pycache__/main.cpython-314.pyc b/backend/__pycache__/main.cpython-314.pyc
+deleted file mode 100644
+index 8b4798d..0000000
+Binary files a/backend/__pycache__/main.cpython-314.pyc and /dev/null differ
+diff --git a/backend/database.py b/backend/database.py
+index f6945c2..086449c 100644
+--- a/backend/database.py
++++ b/backend/database.py
+@@ -160,6 +160,8 @@ class OracleCredential(Base):
+ 
+     id                       = Column(Integer, primary_key=True, autoincrement=True)
+     user_id                  = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
++    env_name                 = Column(String, nullable=False, default="Demo Oracle Fusion")
++    oracle_url               = Column(String, nullable=False, default="https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com")
+     oracle_username          = Column(String, nullable=False)
+     encrypted_oracle_password = Column(LargeBinary, nullable=False)
+     created_at               = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+@@ -174,8 +176,12 @@ class BipReportConfig(Base):
+ 
+     id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+     module      = Column(String, index=True, nullable=False)
++    sub_module  = Column(String, nullable=True)
+     report_name = Column(String, unique=True, index=True, nullable=False)
+-    sql_query   = Column(Text, nullable=False)
++    description = Column(Text, nullable=True)
++    sql_query   = Column(Text, nullable=True)
++    encrypted_sql_query = Column(LargeBinary, nullable=True)
++    is_active   = Column(Boolean, nullable=False, default=True)
+     created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+ 
+ 
+@@ -197,6 +203,14 @@ def get_db():
+ #  INITIALISATION
+ # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+ 
++def _safe_alter_columns(cursor: sqlite3.Cursor, table_name: str, columns: list[tuple[str, str]]) -> None:
++    for col_name, col_type in columns:
++        try:
++            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
++        except sqlite3.OperationalError:
++            pass
++
++
+ def init_db():
+     """
+     Two-phase init:
+@@ -269,6 +283,21 @@ def init_db():
+     # ΓöÇΓöÇ Phase 2: SQLAlchemy create new tables (config_snapshots, etc.) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     Base.metadata.create_all(bind=engine)
+ 
++    conn = get_connection()
++    cursor = conn.cursor()
++    _safe_alter_columns(cursor, "oracle_credentials", [
++        ("env_name", "TEXT DEFAULT 'Demo Oracle Fusion'"),
++        ("oracle_url", "TEXT DEFAULT 'https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com'"),
++    ])
++    _safe_alter_columns(cursor, "bip_report_configs", [
++        ("sub_module", "TEXT"),
++        ("description", "TEXT"),
++        ("encrypted_sql_query", "BLOB"),
++        ("is_active", "INTEGER DEFAULT 1"),
++    ])
++    conn.commit()
++    conn.close()
++
+     print("Database initialised successfully.")
+ 
+ 
+diff --git a/backend/lib/bi_helper.py b/backend/lib/bi_helper.py
+index c51fbba..6a982ef 100644
+--- a/backend/lib/bi_helper.py
++++ b/backend/lib/bi_helper.py
+@@ -76,7 +76,30 @@ def fetch_bi_session_token(soap_url, username, password):
+     }
+ 
+     resp = requests.post(soap_url, data=soap_body, headers=headers)
+-    resp.raise_for_status()
++
++    # Parse SOAP Fault *before* raise_for_status so we can surface the real Oracle error message.
++    # Oracle BIP returns HTTP 500 for auth failures; the real reason is inside <faultstring>.
++    if not resp.ok:
++        fault_msg = None
++        try:
++            root = ET.fromstring(resp.text)
++            # Try with explicit namespace URI
++            fault_el = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
++            # Fallback: try without namespace (some servers omit it)
++            if fault_el is None:
++                fault_el = root.find(".//faultstring")
++            if fault_el is not None and fault_el.text:
++                fault_msg = fault_el.text.strip()
++        except Exception:
++            pass
++        # Fallback: plain-text search in the raw response body
++        if not fault_msg and "<faultstring>" in resp.text:
++            start = resp.text.index("<faultstring>") + len("<faultstring>")
++            end = resp.text.index("</faultstring>", start)
++            fault_msg = resp.text[start:end].strip()
++        if fault_msg:
++            raise RuntimeError(fault_msg)
++        resp.raise_for_status()
+ 
+     root = ET.fromstring(resp.text)
+     ns = {
+@@ -86,7 +109,7 @@ def fetch_bi_session_token(soap_url, username, password):
+ 
+     token_el = root.find(".//ns:loginReturn", ns)
+     if token_el is None or not token_el.text:
+-        raise RuntimeError("Γ¥î Unable to fetch BI session token")
++        raise RuntimeError("Unable to fetch BI session token. Please verify Oracle credentials.")
+ 
+     return token_el.text
+ 
+@@ -464,6 +487,7 @@ def friendly_bi_error(err: Exception | str) -> str:
+     into clear, user-friendly messages.
+     """
+     msg = str(err).lower()
++    original = str(err)
+ 
+     # --------------------------------------------------
+     # 1. Timeouts (MOST IMPORTANT ΓÇö must be first)
+@@ -473,9 +497,7 @@ def friendly_bi_error(err: Exception | str) -> str:
+         or "timeout" in msg
+         or "timed out" in msg
+     ):
+-        return (
+-            "Query timed out."
+-        )
++        return "Query timed out. The Oracle BI server took too long to respond."
+ 
+     # --------------------------------------------------
+     # 2. Network / connectivity issues
+@@ -487,46 +509,51 @@ def friendly_bi_error(err: Exception | str) -> str:
+         or "connection refused" in msg
+         or "name or service not known" in msg
+     ):
++        return "Cannot connect to Oracle BI server. Please check the server URL in your Oracle credentials."
++
++    # --------------------------------------------------
++    # 3. Account locked (Oracle locks after repeated failed logins)
++    # --------------------------------------------------
++    if "locked" in msg or "account is locked" in msg or "user is locked" in msg:
+         return (
+-            "Cannot connect to BI server."
++            "Your Oracle account has been locked due to too many failed login attempts. "
++            "Please contact your Oracle administrator to unlock the account "
++            "(Caleb.Gavin on fa-etaj-saasfademo1.ds-fa.oraclepdemos.com), "
++            "then reconnect with the correct credentials."
+         )
+ 
+     # --------------------------------------------------
+-    # 3. Authentication / authorization
++    # 4. Invalid credentials (Oracle SOAP fault message)
++    # --------------------------------------------------
++    if "invalid username or password" in msg or "failed to log into bi publisher" in msg:
++        return "Invalid Oracle username or password. Please reconnect Oracle with correct credentials."
++
++    # --------------------------------------------------
++    # 4. Authentication / authorization
+     # --------------------------------------------------
+     if "401" in msg or "unauthorized" in msg:
+-        return (
+-            "Authentication failed."
+-        )
++        return "Oracle authentication failed. Please check your credentials."
+ 
+     if "403" in msg or "accessdenied" in msg:
+-        return (
+-            "Access denied."
+-        )
++        return "Access denied by Oracle. Your account may not have BIP access."
+ 
+     # --------------------------------------------------
+-    # 4. BI Publisher internal/server errors
++    # 5. BI Publisher internal/server errors
+     # --------------------------------------------------
+     if (
+         "500" in msg
+         or "internal server error" in msg
+         or "<response [500]>" in msg
+     ):
+-        return (
+-            "BI server error."
+-        )
++        return "Oracle BI server returned an internal error (500). Please try again later."
+ 
+     # --------------------------------------------------
+-    # 5. SOAP-level faults
++    # 6. SOAP-level faults ΓÇö return the raw message if readable
+     # --------------------------------------------------
+     if "soap fault" in msg or "faultcode" in msg:
+-        return (
+-            "BI returned invalid API response."
+-        )
++        return f"Oracle BI API error: {original[:200]}"
+ 
+     # --------------------------------------------------
+-    # 6. Fallback
++    # 7. Fallback ΓÇö return the raw message so it is actionable
+     # --------------------------------------------------
+-    return (
+-        "Unexpected BI error."
+-    )
++    return f"Oracle BI error: {original[:200]}"
+diff --git a/backend/routers/bip_reports.py b/backend/routers/bip_reports.py
+index a7c3866..f0150de 100644
+--- a/backend/routers/bip_reports.py
++++ b/backend/routers/bip_reports.py
+@@ -6,8 +6,8 @@ from sqlalchemy.exc import IntegrityError
+ from fastapi.responses import StreamingResponse
+ 
+ from database import get_db, BipReportConfig, OracleCredential
+-from dependencies import require_enterprise, get_verified_user
+-from Schemas import BipReportCreate, BipReportResponse, ExecuteReportsRequest
++from dependencies import require_tool_access
++from Schemas import BipReportCreate, BipReportResponse, DirectBipSqlRequest, ExecuteReportsRequest
+ from routers.integrations import decrypt_password
+ from lib.config_generate import run_sqls_config_generation
+ 
+@@ -19,7 +19,7 @@ router = APIRouter(
+ @router.post("/", response_model=BipReportResponse, status_code=status.HTTP_201_CREATED)
+ def create_bip_report(
+     report_in: BipReportCreate,
+-    current_user: dict = Depends(require_enterprise),
++    current_user: dict = Depends(require_tool_access("bip_reporting")),
+     db: Session = Depends(get_db)
+ ):
+     """
+@@ -28,7 +28,9 @@ def create_bip_report(
+     """
+     new_report = BipReportConfig(
+         module=report_in.module,
++        sub_module=report_in.sub_module,
+         report_name=report_in.report_name,
++        description=report_in.description,
+         sql_query=report_in.sql_query
+     )
+     db.add(new_report)
+@@ -45,7 +47,7 @@ def create_bip_report(
+ 
+ @router.get("/", response_model=List[BipReportResponse])
+ def list_bip_reports(
+-    current_user: dict = Depends(get_verified_user),
++    current_user: dict = Depends(require_tool_access("bip_reporting")),
+     db: Session = Depends(get_db)
+ ):
+     """
+@@ -59,7 +61,7 @@ def list_bip_reports(
+ @router.post("/execute")
+ def execute_reports(
+     body: ExecuteReportsRequest,
+-    current_user: dict = Depends(get_verified_user),
++    current_user: dict = Depends(require_tool_access("bip_reporting")),
+     db: Session = Depends(get_db)
+ ):
+     """
+@@ -85,9 +87,7 @@ def execute_reports(
+             detail="Failed to decrypt Oracle credentials. Please reconnect your account."
+         )
+ 
+-    # Note: If the user didn't specify URL, we can assume a hardcoded or configured one for the app environment.
+-    # Currently OracleCredential doesn't store URL, so we hardcode the one from earlier demo or read from env.
+-    oracle_url = "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
++    oracle_url = credential.oracle_url or "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com"
+ 
+     # 2. Fetch SQL payloads from DB
+     if not body.report_ids:
+@@ -121,3 +121,51 @@ def execute_reports(
+         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+         headers=headers
+     )
++
++
++@router.post("/execute-sql")
++def execute_direct_sql(
++    body: DirectBipSqlRequest,
++    current_user: dict = Depends(require_tool_access("bip_reporting")),
++    db: Session = Depends(get_db)
++):
++    """
++    Run a one-off SQL query through Oracle BIP and return the generated Excel file.
++    This is intentionally scoped to the BIP Reporting page workflow.
++    """
++    user_id = int(current_user["sub"])
++
++    credential = db.query(OracleCredential).filter(OracleCredential.user_id == user_id).first()
++    if not credential:
++        raise HTTPException(
++            status_code=status.HTTP_400_BAD_REQUEST,
++            detail="Oracle credentials not found. Please connect your Oracle account first."
++        )
++
++    try:
++        password = decrypt_password(credential.encrypted_oracle_password)
++    except Exception:
++        raise HTTPException(
++            status_code=status.HTTP_400_BAD_REQUEST,
++            detail="Failed to decrypt Oracle credentials. Please reconnect your account."
++        )
++
++    excel_buffer, errors = run_sqls_config_generation(
++        username=credential.oracle_username,
++        password=password,
++        url=credential.oracle_url or "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com",
++        sql_items=[(body.module, body.report_name, body.sql_query)]
++    )
++
++    if excel_buffer.getbuffer().nbytes == 0:
++        raise HTTPException(status_code=500, detail=f"Report failed to generate. Errors: {', '.join(errors)}")
++
++    safe_name = "".join(ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in body.report_name).strip("_")
++    headers = {
++        "Content-Disposition": f'attachment; filename="{safe_name or "BIP_Report"}.xlsx"'
++    }
++    return StreamingResponse(
++        excel_buffer,
++        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
++        headers=headers
++    )
+diff --git a/backend/routers/integrations.py b/backend/routers/integrations.py
+index eb79993..2b22aac 100644
+--- a/backend/routers/integrations.py
++++ b/backend/routers/integrations.py
+@@ -95,12 +95,16 @@ def connect_oracle(
+     now = datetime.now(timezone.utc)
+ 
+     if existing:
++        existing.env_name = body.env_name
++        existing.oracle_url = body.oracle_url
+         existing.oracle_username = body.oracle_username
+         existing.encrypted_oracle_password = encrypted_pw
+         existing.updated_at = now
+     else:
+         credential = OracleCredential(
+             user_id=user_id,
++            env_name=body.env_name,
++            oracle_url=body.oracle_url,
+             oracle_username=body.oracle_username,
+             encrypted_oracle_password=encrypted_pw,
+             created_at=now,
+@@ -112,6 +116,8 @@ def connect_oracle(
+ 
+     return OracleConnectResponse(
+         message="Oracle credentials encrypted and saved successfully.",
++        oracle_url=body.oracle_url,
++        env_name=body.env_name,
+         oracle_username=body.oracle_username,
+         connected_at=now,
+     )
+@@ -135,6 +141,8 @@ def oracle_status(
+     if existing:
+         return {
+             "connected": True,
++            "oracle_url": existing.oracle_url,
++            "env_name": existing.env_name,
+             "oracle_username": existing.oracle_username,
+             "connected_at": existing.updated_at.isoformat() if existing.updated_at else None,
+         }
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index d932e8b..46d6d69 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -59,7 +59,7 @@ function ToolRoute({ toolKey, children }: { toolKey: ToolKey; children: React.Re
+ 
+   if (!isAuthenticated) return <Navigate to="/login" replace />;
+   if (checking) return <AppShell><div className="p-8 text-sm text-[#64748B]">Checking access...</div></AppShell>;
+-  if (freshUser?.role === 'admin' || freshUser?.role === 'Admin') return <Navigate to="/admin" replace />;
++  if (freshUser?.role === 'admin' || freshUser?.role === 'Admin') return <AppShell>{children}</AppShell>;
+   if (freshUser?.tool_access?.includes(toolKey)) {
+     return <AppShell>{children}</AppShell>;
+   }
+diff --git a/frontend/src/components/shared/AppShell.tsx b/frontend/src/components/shared/AppShell.tsx
+index f9b3db5..ad33d19 100644
+--- a/frontend/src/components/shared/AppShell.tsx
++++ b/frontend/src/components/shared/AppShell.tsx
+@@ -1,71 +1,47 @@
+-import React, { useState, useEffect } from 'react';
++import { useState, type ReactNode } from 'react';
+ import { Link, useLocation, useNavigate } from 'react-router-dom';
+ import { useAuth } from '@/context/AuthContext';
+ import { usePermission } from '@/hooks/usePermission';
+ import { useSessionHeartbeat } from '@/hooks/useSessionHeartbeat';
+ import { SubscribeModal } from '@/components/shared/SubscribeModal';
+-import { ConnectOracleModal } from '@/components/shared/ConnectOracleModal';
+-import { CreateBipReportModal } from '@/components/CreateBipReportModal';
++import { ThemeToggle } from '@/components/shared/ThemeToggle';
+ import {
+-  DropdownMenu,
+-  DropdownMenuContent,
+-  DropdownMenuItem,
+-  DropdownMenuSeparator,
+-  DropdownMenuTrigger,
+-} from '@/components/ui/dropdown-menu';
+-import { toast } from 'sonner';
+-import {
+-  LayoutDashboard, Camera, ArrowRightLeft, BarChart3, Wallet, Shield, LogOut, Menu, X, ChevronDown, Copy, Key, PlusCircle, Gem
++  LayoutDashboard,
++  Camera,
++  ArrowRightLeft,
++  BarChart3,
++  Wallet,
++  Shield,
++  LogOut,
++  Menu,
++  X,
++  Gem,
++  ArrowLeft,
+ } from 'lucide-react';
+ import { ROLE_COLORS } from '@/utils/constants';
+-import { CheckCircle2 } from 'lucide-react';
+-import type { ToolKey } from '@/types';
+ 
+ const navItems = [
+   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+-  { path: '/config', label: 'Config Snapshot', icon: Camera, toolKey: 'config_snapshot' as ToolKey },
+-  { path: '/data-conversion', label: 'Data Conversion', icon: ArrowRightLeft, toolKey: 'data_conversion' as ToolKey },
+-  { path: '/bip-reporting', label: 'BIP Reporting', icon: BarChart3, toolKey: 'bip_reporting' as ToolKey },
+-  { path: '/payroll', label: 'Payroll Reconciliation', icon: Wallet, toolKey: 'payroll' as ToolKey },
++  { path: '/config', label: 'Config Snapshot', icon: Camera },
++  { path: '/data-conversion', label: 'Data Conversion', icon: ArrowRightLeft },
++  { path: '/bip-reporting', label: 'BIP Reporting', icon: BarChart3 },
++  { path: '/payroll', label: 'Payroll Reconciliation', icon: Wallet },
+ ];
+ 
+-export function AppShell({ children }: { children: React.ReactNode }) {
++export function AppShell({ children }: { children: ReactNode }) {
+   const { user, logout } = useAuth();
+   const location = useLocation();
+   const navigate = useNavigate();
+   const isAdmin = usePermission('manage_users');
+   const [mobileOpen, setMobileOpen] = useState(false);
+-  const [oracleModalOpen, setOracleModalOpen] = useState(false);
+-  const [bipModalOpen, setBipModalOpen] = useState(false);
+-  const [oracleConnected, setOracleConnected] = useState(false);
+   const [subscribeOpen, setSubscribeOpen] = useState(false);
+ 
+-  // Check Oracle connection status on mount
+-  useEffect(() => {
+-    async function checkOracleStatus() {
+-      try {
+-        let token: string | null = null;
+-        const saved = sessionStorage.getItem('migrateos_auth');
+-        if (saved) token = JSON.parse(saved).token;
+-        if (!token) return;
+-
+-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+-        const res = await fetch(`${API_BASE_URL}/api/v1/integrations/oracle/status`, {
+-          headers: { 'Authorization': `Bearer ${token}` },
+-        });
+-        if (res.ok) {
+-          const data = await res.json();
+-          setOracleConnected(data.connected === true);
+-        }
+-      } catch { /* silent */ }
+-    }
+-    checkOracleStatus();
+-  }, []);
+-
+-  // Determine if the current user is a base tier "user"
+   const isBaseUser = user?.role === 'user';
++  const isAdminRole = user?.role === 'admin' || user?.role === 'Admin';
++  const defaultBackPath = isAdminRole ? '/admin' : '/dashboard';
++  const hasInAppBackHistory = location.key !== 'default';
++  const showBackButton = location.pathname !== defaultBackPath;
+ 
+-  // Global session heartbeat ΓÇö pings backend every 60s while tab is visible
+   useSessionHeartbeat();
+ 
+   const handleLogout = () => {
+@@ -73,23 +49,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+     navigate('/login');
+   };
+ 
+-  const copyEnvUrl = () => {
+-    navigator.clipboard.writeText('https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com');
+-    toast.success('Oracle Environment URL copied to clipboard');
++  const handleBack = () => {
++    if (hasInAppBackHistory) {
++      navigate(-1);
++      return;
++    }
++
++    navigate(defaultBackPath);
+   };
+ 
+   const roleColor = user ? ROLE_COLORS[user.role] : '#64748B';
+-  const isAdminRole = user?.role === 'admin' || user?.role === 'Admin';
+-  const canUseTool = (toolKey?: ToolKey) => {
+-    if (!toolKey) return true;
+-    if (isAdminRole) return false;
+-    return Boolean(user?.tool_access?.includes(toolKey));
+-  };
+-  const visibleNavItems = isAdminRole ? [] : navItems.filter(item => canUseTool(item.toolKey));
+ 
+   return (
+-    <div className="min-h-screen bg-[#F3F4F6] flex">
+-      {/* Mobile overlay */}
++    <div className="min-h-screen bg-[#F3F4F6] text-[#0F172A] transition-colors dark:bg-[#020817] dark:text-slate-100 flex">
+       {mobileOpen && (
+         <div
+           className="fixed inset-0 bg-black/45 z-40 lg:hidden"
+@@ -97,70 +69,80 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+         />
+       )}
+ 
+-      {/* Sidebar (Hidden for base users) */}
+       {!isBaseUser && (
+         <aside
+-          className={`fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0F172A] flex flex-col transition-transform duration-250 ease-out
+-            ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
++          className={`fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0F172A] dark:bg-[#081122] border-r border-white/5 dark:border-white/10 flex flex-col transition-transform duration-250 ease-out ${
++            mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
++          }`}
+           style={{ transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)' }}
+         >
+-        <div className="h-14 flex items-center px-6 border-b border-white/10 lg:hidden">
+-          <span className="text-white font-semibold">MigrateOS</span>
+-          <button
+-            className="ml-auto text-white/60 hover:text-white"
+-            onClick={() => setMobileOpen(false)}
+-          >
+-            <X size={20} />
+-          </button>
+-        </div>
++          <div className="h-14 flex items-center px-6 border-b border-white/10 lg:hidden">
++            <span className="text-white font-semibold">MigrateOS</span>
++            <button
++              className="ml-auto text-white/60 hover:text-white"
++              onClick={() => setMobileOpen(false)}
++            >
++              <X size={20} />
++            </button>
++          </div>
+ 
+-        <nav className="flex-1 pt-4 px-3 space-y-1">
+-          {visibleNavItems.map(item => {
+-            const Icon = item.icon;
+-            const isActive = location.pathname === item.path;
+-            return (
+-              <Link
+-                key={item.path}
+-                to={item.path}
+-                onClick={() => setMobileOpen(false)}
+-                className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150
+-                  ${isActive
+-                    ? 'bg-[#185FA5] text-white'
+-                    : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
++          <nav className="flex-1 pt-4 px-3 space-y-1">
++            {navItems.map(item => {
++              const Icon = item.icon;
++              const isActive = location.pathname === item.path;
++
++              return (
++                <Link
++                  key={item.path}
++                  to={item.path}
++                  onClick={() => setMobileOpen(false)}
++                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150 ${
++                    isActive
++                      ? 'bg-[#185FA5] text-white'
++                      : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
+                   }`}
+-              >
+-                <Icon size={16} />
+-                <span>{item.label}</span>
+-              </Link>
+-            );
+-          })}
++                >
++                  <Icon size={16} />
++                  <span>{item.label}</span>
++                </Link>
++              );
++            })}
+ 
+-          {isAdmin && (
+-            <>
+-              <div className="my-2 border-t border-white/10" />
+-              <Link
+-                to="/admin"
+-                onClick={() => setMobileOpen(false)}
+-                className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150
+-                  ${location.pathname === '/admin'
+-                    ? 'bg-[#185FA5] text-white'
+-                    : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
++            {isAdmin && (
++              <>
++                <div className="my-2 border-t border-white/10" />
++                <Link
++                  to="/admin"
++                  onClick={() => setMobileOpen(false)}
++                  className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-150 ${
++                    location.pathname === '/admin'
++                      ? 'bg-[#185FA5] text-white'
++                      : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
+                   }`}
+-              >
+-                <Shield size={16} />
+-                <span>Admin</span>
+-              </Link>
+-            </>
+-          )}
+-        </nav>
+-      </aside>
++                >
++                  <Shield size={16} />
++                  <span>Admin</span>
++                </Link>
++              </>
++            )}
++          </nav>
++        </aside>
+       )}
+ 
+-      {/* Main content area */}
+       <div className="flex-1 flex flex-col min-w-0">
+-        {/* TopBar */}
+-        <header className="h-14 bg-[#185FA5] flex items-center justify-between px-4 lg:px-6 shadow-sm z-30 sticky top-0">
++        <header className="h-14 bg-[#185FA5] dark:bg-[#081225] border-b border-black/5 dark:border-white/10 flex items-center justify-between px-4 lg:px-6 shadow-sm z-30 sticky top-0">
+           <div className="flex items-center gap-3">
++            {showBackButton && (
++              <button
++                type="button"
++                className="inline-flex size-8 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/10 hover:text-white"
++                onClick={handleBack}
++                title="Go back"
++              >
++                <ArrowLeft size={17} />
++              </button>
++            )}
++
+             {!isBaseUser && (
+               <button
+                 className="lg:hidden text-white/80 hover:text-white"
+@@ -169,77 +151,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+                 <Menu size={20} />
+               </button>
+             )}
+-            <div className="w-4 h-4 bg-white rounded-sm" />
++
++            <div className="size-4 bg-white rounded-sm" />
+             <span className="text-white font-semibold text-base">MigrateOS</span>
+           </div>
+ 
+           <div className="flex items-center gap-3">
+-            {/* Subscription button ΓÇö only for base 'user' role */}
++            <ThemeToggle />
++
+             {isBaseUser && (
+               <button
+                 onClick={() => setSubscribeOpen(true)}
+-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 outline-none cursor-pointer"
++                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 outline-none cursor-pointer hover:scale-105 active:scale-95"
+                 style={{
+-                  background: 'linear-gradient(135deg, rgba(109,40,217,0.28) 0%, rgba(168,85,247,0.22) 100%)',
+-                  border: '1px solid rgba(168,85,247,0.50)',
++                  background: 'linear-gradient(135deg, rgba(109,40,217,0.30) 0%, rgba(168,85,247,0.24) 100%)',
++                  border: '1px solid rgba(168,85,247,0.55)',
+                   color: '#E9D5FF',
+-                  boxShadow: '0 0 10px rgba(168,85,247,0.30)',
++                  boxShadow: '0 0 12px rgba(168,85,247,0.35)',
+                 }}
+-                title="View subscription & available tools"
++                title="View subscription and available tools"
+               >
+                 <Gem size={13} className="text-purple-300" />
+                 Subscription
+               </button>
+             )}
+ 
+-            {/* Oracle Env Selector */}
+-            {user && !isAdminRole && (
+-              <DropdownMenu>
+-                <DropdownMenuTrigger asChild>
+-                  <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/10 outline-none">
+-                    Oracle Fusion Env
+-                    <ChevronDown size={14} className="text-white/70" />
+-                  </button>
+-                </DropdownMenuTrigger>
+-                <DropdownMenuContent align="end" className="w-64 border-white/10 shadow-xl rounded-xl">
+-                  <div className="px-2 py-2 mb-1">
+-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Active Environment</p>
+-                    <button 
+-                      onClick={copyEnvUrl}
+-                      className="w-full text-left group flex items-center justify-between gap-2 p-2 rounded-md hover:bg-gray-100 transition-colors"
+-                    >
+-                      <span className="text-sm font-medium truncate text-gray-800">
+-                        fa-etaj-saasfademo1
+-                      </span>
+-                      <Copy size={14} className="text-gray-400 group-hover:text-[#185FA5] shrink-0" />
+-                    </button>
+-                  </div>
+-                  
+-                  <DropdownMenuSeparator className="bg-gray-100" />
+-                  
+-                  <DropdownMenuItem 
+-                    onSelect={() => setOracleModalOpen(true)}
+-                    className={`p-2 cursor-pointer font-medium rounded-md m-1 transition-colors flex items-center gap-2 ${
+-                      oracleConnected
+-                        ? 'text-emerald-600 focus:bg-emerald-50 focus:text-emerald-700'
+-                        : 'text-[#185FA5] focus:bg-[#185FA5]/10 focus:text-[#185FA5]'
+-                    }`}
+-                  >
+-                    {oracleConnected ? <CheckCircle2 size={14} /> : <Key size={14} />}
+-                    {oracleConnected ? 'Connected ΓÇô Oracle Credentials' : 'Connect Oracle Credentials'}
+-                  </DropdownMenuItem>
+-                  
+-                  <DropdownMenuItem 
+-                    onSelect={() => setBipModalOpen(true)}
+-                    className="p-2 cursor-pointer font-medium text-emerald-600 focus:bg-emerald-50 focus:text-emerald-700 rounded-md m-1 transition-colors flex items-center gap-2"
+-                  >
+-                    <PlusCircle size={14} />
+-                    New BIP Report
+-                  </DropdownMenuItem>
+-                </DropdownMenuContent>
+-              </DropdownMenu>
+-            )}
+-
+             {user && (
+               <>
+                 <span
+@@ -248,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+                 >
+                   {user.role}
+                 </span>
+-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#0F172A] text-sm font-semibold ml-1">
++                <div className="size-8 rounded-full bg-white flex items-center justify-center text-[#0F172A] text-sm font-semibold ml-1">
+                   {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                 </div>
+                 <button
+@@ -263,29 +199,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+           </div>
+         </header>
+ 
+-        {/* Page content */}
+         <main className="flex-1 overflow-auto">
+           {children}
+         </main>
+       </div>
+ 
+-      {/* Enterprise upsell modal ΓÇö self-gating, only visible to "user" role */}
+       <SubscribeModal
+         externalOpen={subscribeOpen}
+         onExternalOpenChange={setSubscribeOpen}
+       />
+-
+-      {/* Secure Oracle Credential Modal */}
+-      <ConnectOracleModal 
+-        open={oracleModalOpen} 
+-        onOpenChange={setOracleModalOpen} 
+-      />
+-
+-      {/* BIP Report Modal */}
+-      <CreateBipReportModal
+-        open={bipModalOpen}
+-        onOpenChange={setBipModalOpen}
+-      />
+     </div>
+   );
+ }
+diff --git a/frontend/src/components/shared/DataReveal.tsx b/frontend/src/components/shared/DataReveal.tsx
+index 5a8d3c3..b4782c5 100644
+--- a/frontend/src/components/shared/DataReveal.tsx
++++ b/frontend/src/components/shared/DataReveal.tsx
+@@ -14,7 +14,7 @@ export function DataReveal({ value, isSensitive, maskChar = 'ΓÇó', maskLength =
+   const [flash, setFlash] = useState(false);
+ 
+   if (!isSensitive) {
+-    return <span className="font-mono text-sm text-[#0F172A]">{value}</span>;
++    return <span className="font-mono text-sm text-[#0F172A] dark:text-slate-100">{value}</span>;
+   }
+ 
+   const masked = maskChar.repeat(maskLength);
+@@ -34,7 +34,7 @@ export function DataReveal({ value, isSensitive, maskChar = 'ΓÇó', maskLength =
+     <div className="inline-flex items-center gap-2">
+       <span
+         className={`font-mono text-sm transition-all duration-200 ${
+-          revealed ? 'text-[#0F172A] tracking-normal' : 'text-[#94A3B8] tracking-[0.08em]'
++          revealed ? 'text-[#0F172A] dark:text-slate-100 tracking-normal' : 'text-[#94A3B8] dark:text-slate-500 tracking-[0.08em]'
+         }`}
+         style={{
+           backgroundColor: flash ? 'rgba(15, 110, 86, 0.15)' : 'transparent',
+@@ -45,7 +45,7 @@ export function DataReveal({ value, isSensitive, maskChar = 'ΓÇó', maskLength =
+       </span>
+       <button
+         onClick={handleToggle}
+-        className="p-1 rounded hover:bg-[rgba(24,95,165,0.06)] text-[#64748B] hover:text-[#185FA5] transition-colors"
++        className="p-1 rounded hover:bg-[rgba(24,95,165,0.06)] dark:hover:bg-white/5 text-[#64748B] dark:text-slate-400 hover:text-[#185FA5] transition-colors"
+         title={revealed ? 'Hide sensitive data' : 'Reveal sensitive data'}
+       >
+         {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+diff --git a/frontend/src/components/shared/EmptyState.tsx b/frontend/src/components/shared/EmptyState.tsx
+index d9cc0b2..7a1d85a 100644
+--- a/frontend/src/components/shared/EmptyState.tsx
++++ b/frontend/src/components/shared/EmptyState.tsx
+@@ -10,10 +10,10 @@ interface EmptyStateProps {
+ export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+   return (
+     <div className="flex flex-col items-center justify-center py-16 text-center">
+-      <div className="text-[#CBD5E1] mb-4">{icon}</div>
+-      <h3 className="text-base font-medium text-[#0F172A]">{title}</h3>
++      <div className="text-[#CBD5E1] dark:text-slate-600 mb-4">{icon}</div>
++      <h3 className="text-base font-medium text-[#0F172A] dark:text-slate-100">{title}</h3>
+       {description && (
+-        <p className="text-sm text-[#64748B] mt-1 max-w-sm">{description}</p>
++        <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1 max-w-sm">{description}</p>
+       )}
+       {action && <div className="mt-4">{action}</div>}
+     </div>
+diff --git a/frontend/src/components/shared/MetricCard.tsx b/frontend/src/components/shared/MetricCard.tsx
+index 28ac74d..9cea2a1 100644
+--- a/frontend/src/components/shared/MetricCard.tsx
++++ b/frontend/src/components/shared/MetricCard.tsx
+@@ -16,9 +16,9 @@ export function MetricCard({ label, value, change, changeLabel = 'vs last week',
+     : null;
+ 
+   return (
+-    <div className="bg-white border border-[#E2E8F0] rounded-lg p-6 hover:shadow-md transition-shadow duration-200">
++    <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-6 hover:shadow-md transition-shadow duration-200">
+       <div className="flex items-start justify-between">
+-        <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">{label}</span>
++        <span className="text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">{label}</span>
+         {icon && (
+           <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: accentColor + '1A', color: accentColor }}>
+             {icon}
+@@ -26,7 +26,7 @@ export function MetricCard({ label, value, change, changeLabel = 'vs last week',
+         )}
+       </div>
+       <div className="mt-3">
+-        <span className="text-2xl font-semibold text-[#0F172A] tracking-tight">{value}</span>
++        <span className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">{value}</span>
+       </div>
+       {changeText && (
+         <div className="mt-2 flex items-center gap-1.5">
+@@ -39,7 +39,7 @@ export function MetricCard({ label, value, change, changeLabel = 'vs last week',
+           >
+             {change !== undefined ? 'Γåæ' : 'Γåô'} {Math.abs(change || 0)}%
+           </span>
+-          <span className="text-xs text-[#64748B]">{changeLabel}</span>
++          <span className="text-xs text-[#64748B] dark:text-slate-400">{changeLabel}</span>
+         </div>
+       )}
+     </div>
+diff --git a/frontend/src/components/shared/ThemeProvider.tsx b/frontend/src/components/shared/ThemeProvider.tsx
+new file mode 100644
+index 0000000..7ec4ad8
+--- /dev/null
++++ b/frontend/src/components/shared/ThemeProvider.tsx
+@@ -0,0 +1,30 @@
++import { ThemeProvider as NextThemesProvider } from 'next-themes';
++import type { ThemeProviderProps } from 'next-themes';
++import { useAuth } from '@/context/AuthContext';
++
++export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
++  return (
++    <NextThemesProvider
++      attribute="class"
++      defaultTheme="light"
++      enableSystem={false}
++      storageKey="migrateos-theme"
++      {...props}
++    >
++      {children}
++    </NextThemesProvider>
++  );
++}
++
++export function SessionThemeProvider({ children }: { children: React.ReactNode }) {
++  const { user, isAuthenticated } = useAuth();
++  const storageKey = isAuthenticated && user
++    ? `migrateos-theme-${user.id}`
++    : 'migrateos-theme-guest';
++
++  return (
++    <ThemeProvider key={storageKey} storageKey={storageKey}>
++      {children}
++    </ThemeProvider>
++  );
++}
+diff --git a/frontend/src/components/shared/ThemeToggle.tsx b/frontend/src/components/shared/ThemeToggle.tsx
+new file mode 100644
+index 0000000..81c00be
+--- /dev/null
++++ b/frontend/src/components/shared/ThemeToggle.tsx
+@@ -0,0 +1,26 @@
++import { useEffect, useState } from 'react';
++import { Moon, Sun } from 'lucide-react';
++import { useTheme } from 'next-themes';
++
++export function ThemeToggle({ className = '' }: { className?: string }) {
++  const { resolvedTheme, setTheme } = useTheme();
++  const [mounted, setMounted] = useState(false);
++
++  useEffect(() => {
++    setMounted(true);
++  }, []);
++
++  const isDark = mounted && resolvedTheme === 'dark';
++
++  return (
++    <button
++      type="button"
++      onClick={() => setTheme(isDark ? 'light' : 'dark')}
++      className={`inline-flex size-9 items-center justify-center rounded-md border border-black/10 bg-white/10 text-white/85 transition-colors hover:bg-white/20 hover:text-white dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10 ${className}`.trim()}
++      aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
++      title={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
++    >
++      {isDark ? <Sun size={16} /> : <Moon size={16} />}
++    </button>
++  );
++}
+diff --git a/frontend/src/context/AuthContext.tsx b/frontend/src/context/AuthContext.tsx
+index 6ded9ce..82a23e2 100644
+--- a/frontend/src/context/AuthContext.tsx
++++ b/frontend/src/context/AuthContext.tsx
+@@ -147,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
+   const logout = useCallback(() => {
+     setState({ user: null, token: null, isAuthenticated: false });
+     sessionStorage.removeItem('migrateos_auth');
++    sessionStorage.removeItem('migrateos_sub_shown'); // reset so modal shows again on next login
+     toast.info('Signed out successfully');
+   }, []);
+ 
+diff --git a/frontend/src/hooks/usePoll.ts b/frontend/src/hooks/usePoll.ts
+index 7144f19..3ffc1ac 100644
+--- a/frontend/src/hooks/usePoll.ts
++++ b/frontend/src/hooks/usePoll.ts
+@@ -1,4 +1,4 @@
+-import { useState, useEffect, useCallback } from 'react';
++import { useState, useEffect, useCallback, useRef } from 'react';
+ 
+ export function usePoll<T>(
+   fetcher: () => Promise<T>,
+@@ -6,28 +6,47 @@ export function usePoll<T>(
+   enabled: boolean = true
+ ): { data: T | null; loading: boolean; error: string | null; refresh: () => void } {
+   const [data, setData] = useState<T | null>(null);
+-  const [loading, setLoading] = useState(true);
++  const [loading, setLoading] = useState(enabled);
+   const [error, setError] = useState<string | null>(null);
++  const fetcherRef = useRef(fetcher);
+ 
+-  const refresh = useCallback(async () => {
++  useEffect(() => {
++    fetcherRef.current = fetcher;
++  }, [fetcher]);
++
++  const runRefresh = useCallback(async (showLoading: boolean) => {
+     try {
+-      setLoading(true);
+-      const result = await fetcher();
++      if (showLoading) {
++        setLoading(true);
++      }
++      const result = await fetcherRef.current();
+       setData(result);
+       setError(null);
+     } catch (err) {
+       setError(err instanceof Error ? err.message : 'Unknown error');
+     } finally {
+-      setLoading(false);
++      if (showLoading) {
++        setLoading(false);
++      }
+     }
+-  }, [fetcher]);
++  }, []);
++
++  const refresh = useCallback(() => {
++    void runRefresh(true);
++  }, [runRefresh]);
+ 
+   useEffect(() => {
+-    if (!enabled) return;
+-    refresh();
+-    const timer = setInterval(refresh, interval);
++    if (!enabled) {
++      setLoading(false);
++      return;
++    }
++
++    void runRefresh(true);
++    const timer = setInterval(() => {
++      void runRefresh(false);
++    }, interval);
+     return () => clearInterval(timer);
+-  }, [refresh, interval, enabled]);
++  }, [runRefresh, interval, enabled]);
+ 
+   return { data, loading, error, refresh };
+ }
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+index 6e06204..2c72c01 100644
+--- a/frontend/src/main.tsx
++++ b/frontend/src/main.tsx
+@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
+ import { HashRouter } from 'react-router-dom'
+ import { Toaster } from 'sonner'
+ import { AuthProvider } from '@/context/AuthContext'
++import { SessionThemeProvider } from '@/components/shared/ThemeProvider'
+ import App from './App'
+ import './index.css'
+ 
+@@ -10,16 +11,18 @@ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <HashRouter>
+       <AuthProvider>
+-        <App />
+-        <Toaster 
+-          position="bottom-right"
+-          toastOptions={{
+-            style: {
+-              borderRadius: '8px',
+-              fontSize: '14px',
+-            }
+-          }}
+-        />
++        <SessionThemeProvider>
++          <App />
++          <Toaster 
++            position="bottom-right"
++            toastOptions={{
++              style: {
++                borderRadius: '8px',
++                fontSize: '14px',
++              }
++            }}
++          />
++        </SessionThemeProvider>
+       </AuthProvider>
+     </HashRouter>
+   </StrictMode>
+diff --git a/frontend/src/pages/AdminPage.tsx b/frontend/src/pages/AdminPage.tsx
+index aefb86b..09b83b8 100644
+--- a/frontend/src/pages/AdminPage.tsx
++++ b/frontend/src/pages/AdminPage.tsx
+@@ -8,16 +8,14 @@ import {
+   Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw, KeyRound, Trash2
+ } from 'lucide-react';
+ 
+-// ΓöÇΓöÇ Types for the real backend ACP response ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+-// ΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+ function formatDate(iso: string): string {
+   try {
+     return new Date(iso).toLocaleDateString('en-US', {
+       year: 'numeric', month: 'short', day: 'numeric'
+     });
+-  } catch { return iso; }
++  } catch {
++    return iso;
++  }
+ }
+ 
+ function isApiError(res: unknown): res is ApiError {
+@@ -30,8 +28,6 @@ const ROLE_COLORS: Record<string, string> = {
+   user: '#0F6E56',
+ };
+ 
+-// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+-
+ export function AdminPage() {
+   const [users, setUsers] = useState<ACPUser[]>([]);
+   const [loading, setLoading] = useState(true);
+@@ -44,8 +40,6 @@ export function AdminPage() {
+   const [deleting, setDeleting] = useState<number | null>(null);
+   const { user: currentUser } = useAuth();
+ 
+-  // ΓöÇΓöÇ Fetch users from backend ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+   const loadUsers = useCallback(async () => {
+     setLoading(true);
+     const res = await adminApi.getUsers(
+@@ -63,7 +57,7 @@ export function AdminPage() {
+   }, [roleFilter, search]);
+ 
+   useEffect(() => {
+-    loadUsers();
++    void loadUsers();
+   }, [loadUsers]);
+ 
+   useEffect(() => {
+@@ -75,19 +69,15 @@ export function AdminPage() {
+         setTools(res);
+       }
+     }
+-    loadTools();
++    void loadTools();
+   }, []);
+ 
+-  // ΓöÇΓöÇ Debounced search ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+   const [searchInput, setSearchInput] = useState('');
+   useEffect(() => {
+     const timer = setTimeout(() => setSearch(searchInput), 400);
+     return () => clearTimeout(timer);
+   }, [searchInput]);
+ 
+-  // ΓöÇΓöÇ Kill switch handler ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+   async function handleToggleRestriction(userId: number, currentlyRestricted: boolean) {
+     setToggling(userId);
+     const res = await adminApi.restrictUser(userId, !currentlyRestricted);
+@@ -95,7 +85,6 @@ export function AdminPage() {
+       toast.error(res.error.message);
+     } else {
+       toast.success(res.message);
+-      // Optimistic update
+       setUsers(prev => prev.map(u =>
+         u.id === userId ? { ...u, is_restricted: !currentlyRestricted } : u
+       ));
+@@ -154,70 +143,65 @@ export function AdminPage() {
+     setDeleting(null);
+   }
+ 
+-  // ΓöÇΓöÇ Stats ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+   const totalUsers = users.length;
+   const activeUsers = users.filter(u => !u.is_restricted).length;
+   const restrictedUsers = users.filter(u => u.is_restricted).length;
+ 
+   return (
+     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
+-      {/* Header */}
+       <div className="mb-6">
+-        <h1 className="text-2xl font-semibold text-[#0F172A] tracking-tight">Admin Control Panel</h1>
+-        <p className="text-sm text-[#64748B] mt-1">Manage users, monitor sessions, and enforce access control.</p>
++        <h1 className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Admin Control Panel</h1>
++        <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1">Manage users, monitor sessions, and enforce access control.</p>
+       </div>
+ 
+-      {/* Stats Cards */}
+       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 flex items-center gap-4">
++        <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-5 flex items-center gap-4">
+           <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-[#185FA51A] text-[#185FA5]">
+             <Users size={20} />
+           </div>
+           <div>
+-            <p className="text-2xl font-semibold text-[#0F172A]">{totalUsers}</p>
+-            <p className="text-xs text-[#64748B]">Total Users</p>
++            <p className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100">{totalUsers}</p>
++            <p className="text-xs text-[#64748B] dark:text-slate-400">Total Users</p>
+           </div>
+         </div>
+-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 flex items-center gap-4">
++        <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-5 flex items-center gap-4">
+           <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-[#0F6E561A] text-[#0F6E56]">
+             <ShieldCheck size={20} />
+           </div>
+           <div>
+-            <p className="text-2xl font-semibold text-[#0F172A]">{activeUsers}</p>
+-            <p className="text-xs text-[#64748B]">Active</p>
++            <p className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100">{activeUsers}</p>
++            <p className="text-xs text-[#64748B] dark:text-slate-400">Active</p>
+           </div>
+         </div>
+-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 flex items-center gap-4">
++        <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-5 flex items-center gap-4">
+           <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-[#993C1D1A] text-[#993C1D]">
+             <ShieldAlert size={20} />
+           </div>
+           <div>
+-            <p className="text-2xl font-semibold text-[#0F172A]">{restrictedUsers}</p>
+-            <p className="text-xs text-[#64748B]">Restricted</p>
++            <p className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100">{restrictedUsers}</p>
++            <p className="text-xs text-[#64748B] dark:text-slate-400">Restricted</p>
+           </div>
+         </div>
+       </div>
+ 
+-      {/* Toolbar: Search + Role Filter + Refresh */}
+       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+         <div className="relative flex-1">
+-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
++          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] dark:text-slate-500" />
+           <input
+             type="text"
+             value={searchInput}
+             onChange={e => setSearchInput(e.target.value)}
+-            placeholder="Search by email or usernameΓÇª"
+-            className="h-10 w-full rounded-md border border-[#CBD5E1] bg-white pl-10 pr-3 text-sm text-[#0F172A] transition-all placeholder:text-[#94A3B8] focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
++            placeholder="Search by email or username..."
++            className="h-10 w-full rounded-md border border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 pl-10 pr-3 text-sm text-[#0F172A] dark:text-slate-100 transition-all placeholder:text-[#94A3B8] dark:placeholder:text-slate-500 focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
+           />
+         </div>
+ 
+         <div className="relative">
+-          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
++          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] dark:text-slate-500 pointer-events-none" />
+           <select
+             value={roleFilter}
+             onChange={e => setRoleFilter(e.target.value)}
+-            className="h-10 w-full sm:w-44 rounded-md border border-[#CBD5E1] bg-white pl-9 pr-3 text-sm text-[#0F172A] transition-all focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15 appearance-none cursor-pointer"
++            className="h-10 w-full sm:w-44 rounded-md border border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 pl-9 pr-3 text-sm text-[#0F172A] dark:text-slate-100 transition-all focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15 appearance-none cursor-pointer"
+           >
+             <option value="">All Roles</option>
+             <option value="admin">Admin</option>
+@@ -228,22 +212,21 @@ export function AdminPage() {
+ 
+         <button
+           onClick={loadUsers}
+-          className="h-10 px-4 rounded-md border border-[#CBD5E1] bg-white text-sm font-medium text-[#334155] hover:bg-[#F8FAFC] transition-colors flex items-center gap-2"
++          className="h-10 px-4 rounded-md border border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 text-sm font-medium text-[#334155] dark:text-slate-200 hover:bg-[#F8FAFC] dark:hover:bg-slate-800 transition-colors flex items-center gap-2"
+         >
+           <RefreshCw size={14} />
+           Refresh
+         </button>
+       </div>
+ 
+-      {/* Data Table */}
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
++      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
+         {loading ? (
+           <div className="flex items-center justify-center py-20">
+             <Loader2 size={24} className="animate-spin text-[#185FA5]" />
+-            <span className="ml-3 text-sm text-[#64748B]">Loading usersΓÇª</span>
++            <span className="ml-3 text-sm text-[#64748B] dark:text-slate-400">Loading users...</span>
+           </div>
+         ) : users.length === 0 ? (
+-          <div className="flex flex-col items-center justify-center py-20 text-[#64748B]">
++          <div className="flex flex-col items-center justify-center py-20 text-[#64748B] dark:text-slate-400">
+             <Users size={48} strokeWidth={1} className="mb-3 opacity-40" />
+             <p className="text-sm">No users found.</p>
+           </div>
+@@ -251,31 +234,31 @@ export function AdminPage() {
+           <div className="overflow-x-auto">
+             <table className="w-full">
+               <thead>
+-                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">ID</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Email</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Username</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Role</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Tools</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Joined</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Last Active</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">
++                <tr className="bg-[#F8FAFC] dark:bg-slate-900 border-b border-[#E2E8F0] dark:border-white/10">
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">ID</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Email</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Username</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Role</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Tools</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Joined</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Last Active</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">
+                     <span className="flex items-center gap-1"><Clock size={12} /> Active Time</span>
+                   </th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
+-                  <th className="text-center px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Actions</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
++                  <th className="text-center px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Actions</th>
+                 </tr>
+               </thead>
+-              <tbody className="divide-y divide-[#E2E8F0]">
++              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
+                 {users.map(u => {
+                   const isSelf = currentUser?.id === String(u.id);
+                   const roleColor = ROLE_COLORS[u.role] || '#64748B';
+ 
+                   return (
+-                    <tr key={u.id} className="hover:bg-[#F8FAFC] transition-colors">
+-                      <td className="px-4 py-3 text-sm font-mono text-[#64748B]">{u.id}</td>
+-                      <td className="px-4 py-3 text-sm text-[#0F172A] font-medium">{u.email}</td>
+-                      <td className="px-4 py-3 text-sm text-[#334155]">{u.username}</td>
++                    <tr key={u.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-900/70 transition-colors">
++                      <td className="px-4 py-3 text-sm font-mono text-[#64748B] dark:text-slate-400">{u.id}</td>
++                      <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100 font-medium">{u.email}</td>
++                      <td className="px-4 py-3 text-sm text-[#334155] dark:text-slate-300">{u.username}</td>
+                       <td className="px-4 py-3">
+                         <span
+                           className="text-xs font-semibold px-2.5 py-1 rounded-full"
+@@ -306,7 +289,7 @@ export function AdminPage() {
+                                   className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-60 ${
+                                     checked
+                                       ? 'border-[#185FA5]/30 bg-[#185FA51A] text-[#185FA5]'
+-                                      : 'border-[#CBD5E1] bg-white text-[#64748B] hover:bg-[#F8FAFC]'
++                                      : 'border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 text-[#64748B] dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800'
+                                   }`}
+                                 >
+                                   {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : <KeyRound size={11} />}
+@@ -328,9 +311,9 @@ export function AdminPage() {
+                           </div>
+                         )}
+                       </td>
+-                      <td className="px-4 py-3 text-sm text-[#64748B]">{formatDate(u.created_at)}</td>
+-                      <td className="px-4 py-3 text-sm text-[#334155] font-medium">{formatLastActive(u.last_active_at)}</td>
+-                      <td className="px-4 py-3 text-sm font-mono text-[#334155]">
++                      <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{formatDate(u.created_at)}</td>
++                      <td className="px-4 py-3 text-sm text-[#334155] dark:text-slate-300 font-medium">{formatLastActive(u.last_active_at)}</td>
++                      <td className="px-4 py-3 text-sm font-mono text-[#334155] dark:text-slate-300">
+                         {formatActiveTime(u.total_active_seconds)}
+                       </td>
+                       <td className="px-4 py-3">
+@@ -346,11 +329,11 @@ export function AdminPage() {
+                       </td>
+                       <td className="px-4 py-3 text-center">
+                         {isSelf ? (
+-                          <span className="text-xs text-[#94A3B8] italic">You</span>
++                          <span className="text-xs text-[#94A3B8] dark:text-slate-500 italic">You</span>
+                         ) : (
+                           <div className="flex justify-center gap-2">
+                             {toggling === u.id ? (
+-                              <Loader2 size={16} className="animate-spin text-[#64748B] mt-1.5" />
++                              <Loader2 size={16} className="animate-spin text-[#64748B] dark:text-slate-400 mt-1.5" />
+                             ) : u.is_restricted ? (
+                               <button
+                                 onClick={() => handleToggleRestriction(u.id, u.is_restricted)}
+@@ -371,7 +354,7 @@ export function AdminPage() {
+                             <button
+                               onClick={() => handleDeleteUser(u)}
+                               disabled={deleting === u.id || u.role === 'admin'}
+-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
++                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[#450A0A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                               title={u.role === 'admin' ? 'Admin accounts cannot be deleted here' : 'Delete user'}
+                             >
+                               {deleting === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+diff --git a/frontend/src/pages/BIPReportingPage.tsx b/frontend/src/pages/BIPReportingPage.tsx
+index 7e7ae7a..e6a24f4 100644
+--- a/frontend/src/pages/BIPReportingPage.tsx
++++ b/frontend/src/pages/BIPReportingPage.tsx
+@@ -1,9 +1,29 @@
+ import { useEffect, useState } from 'react';
+-import { useAuth } from '@/context/AuthContext';
+ import { Navigate } from 'react-router-dom';
+-import { usePermission } from '@/hooks/usePermission';
+-import { bipReportingApi, type BipReportResponse } from '@/services/api';
++import { format } from 'date-fns';
+ import { toast } from 'sonner';
++import {
++  BarChart3,
++  Clock,
++  Database,
++  KeyRound,
++  Loader2,
++  PlayCircle,
++  PlusCircle,
++  TerminalSquare,
++} from 'lucide-react';
++
++import { useAuth } from '@/context/AuthContext';
++import { usePermission, useToolAccess } from '@/hooks/usePermission';
++import { bipReportingApi, type BipReportResponse, type OracleStatus } from '@/services/api';
++import { CreateBipReportModal } from '@/components/CreateBipReportModal';
++import { ConnectOracleModal } from '@/components/shared/ConnectOracleModal';
++import { Card } from '@/components/ui/card';
++import { Button } from '@/components/ui/button';
++import { Checkbox } from '@/components/ui/checkbox';
++import { Input } from '@/components/ui/input';
++import { Label } from '@/components/ui/label';
++import { Textarea } from '@/components/ui/textarea';
+ import {
+   Table,
+   TableBody,
+@@ -12,166 +32,250 @@ import {
+   TableHeader,
+   TableRow,
+ } from '@/components/ui/table';
+-import { Checkbox } from '@/components/ui/checkbox';
+-import { Button } from '@/components/ui/button';
+-import { Loader2, PlayCircle, BarChart3, Clock, Database, PlusCircle } from 'lucide-react';
+-import { format } from 'date-fns';
+-import { Card } from '@/components/ui/card';
+-import { CreateBipReportModal } from '@/components/CreateBipReportModal';
++
++function downloadWorkbook(blob: Blob, filePrefix: string) {
++  const url = window.URL.createObjectURL(blob);
++  const a = document.createElement('a');
++  a.href = url;
++  const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
++  a.download = `${filePrefix}_${timestamp}.xlsx`;
++  document.body.appendChild(a);
++  a.click();
++  a.remove();
++  window.URL.revokeObjectURL(url);
++}
++
++function isApiError(value: unknown): value is { error: { message: string } } {
++  return typeof value === 'object' && value !== null && 'error' in value;
++}
+ 
+ export function BIPReportingPage() {
+   const { user } = useAuth();
+-  const canAccess = usePermission('run_bip_report');
+-  
++  const canAccess = usePermission('run_bip_report') || useToolAccess('bip_reporting');
++
+   const [reports, setReports] = useState<BipReportResponse[]>([]);
+   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
++  const [oracleStatus, setOracleStatus] = useState<OracleStatus | null>(null);
+   const [isLoading, setIsLoading] = useState(true);
+   const [isExecuting, setIsExecuting] = useState(false);
++  const [isRunningSql, setIsRunningSql] = useState(false);
+   const [bipModalOpen, setBipModalOpen] = useState(false);
++  const [oracleModalOpen, setOracleModalOpen] = useState(false);
++  const [directModule, setDirectModule] = useState('Ad Hoc');
++  const [directReportName, setDirectReportName] = useState('Direct_SQL_Report');
++  const [directSql, setDirectSql] = useState('select 1 from dual');
+ 
+-  // Fetch reports on mount
+   useEffect(() => {
+-    fetchReports();
++    void fetchReports();
++    void fetchOracleStatus();
+   }, []);
+ 
+   const fetchReports = async () => {
+     setIsLoading(true);
+     const res = await bipReportingApi.getBipReports();
+-    if ('error' in res && res.error) {
+-      toast.error((res as any).error.message || 'Failed to fetch reports.');
++    if (isApiError(res)) {
++      toast.error(res.error.message || 'Failed to fetch reports.');
+     } else {
+-      setReports(res as unknown as BipReportResponse[]); 
++      setReports(res);
+     }
+     setIsLoading(false);
+   };
+ 
++  const fetchOracleStatus = async () => {
++    const res = await bipReportingApi.getOracleStatus();
++    if (!isApiError(res)) setOracleStatus(res);
++  };
++
+   const handleSelectAll = (checked: boolean) => {
+-    if (checked) {
+-      setSelectedIds(new Set(reports.map(r => r.id)));
+-    } else {
+-      setSelectedIds(new Set());
+-    }
++    setSelectedIds(checked ? new Set(reports.map(r => r.id)) : new Set());
+   };
+ 
+   const handleSelectOne = (id: number, checked: boolean) => {
+-    const newSet = new Set(selectedIds);
+-    if (checked) newSet.add(id);
+-    else newSet.delete(id);
+-    setSelectedIds(newSet);
++    const next = new Set(selectedIds);
++    if (checked) next.add(id);
++    else next.delete(id);
++    setSelectedIds(next);
+   };
+ 
+-  const handleExecute = async () => {
++  const handleExecuteSelected = async () => {
+     if (selectedIds.size === 0) return;
+-    
++
+     setIsExecuting(true);
+-    const idsToRun = Array.from(selectedIds);
+-    
+-    toast.info('Executing in Oracle...', { id: 'oracle-exec' });
+-    
+-    const response = await bipReportingApi.executeBipReports(idsToRun);
+-    
+-    toast.dismiss('oracle-exec');
++    toast.info('Executing selected reports in Oracle...', { id: 'oracle-exec' });
++
++    const response = await bipReportingApi.executeBipReports(Array.from(selectedIds));
+ 
+-    if ('error' in response && response.error) {
+-      toast.error((response as any).error.message || 'Execution failed.');
++    toast.dismiss('oracle-exec');
++    if (isApiError(response)) {
++      toast.error(response.error.message || 'Execution failed.');
+     } else {
+-      toast.success('Reports generated successfully! Downloading...');
+-      
+-      // Blob download logic
+-      const blob = response as Blob;
+-      const url = window.URL.createObjectURL(blob);
+-      const a = document.createElement('a');
+-      a.href = url;
+-      
+-      const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
+-      a.download = `Oracle_Config_Extract_${timestamp}.xlsx`;
+-      
+-      document.body.appendChild(a);
+-      a.click();
+-      a.remove();
+-      window.URL.revokeObjectURL(url); // prevent memory leak
++      toast.success('Report generated. Downloading workbook...');
++      downloadWorkbook(response, 'Oracle_Config_Extract');
+     }
+-    
+     setIsExecuting(false);
+   };
+ 
+-  // RBAC verification
++  const handleRunDirectSql = async (event: React.FormEvent) => {
++    event.preventDefault();
++    if (!directModule.trim() || !directReportName.trim() || !directSql.trim()) {
++      toast.error('Module, report name, and SQL query are required.');
++      return;
++    }
++
++    setIsRunningSql(true);
++    toast.info('Running SQL in Oracle BIP...', { id: 'direct-sql' });
++
++    const response = await bipReportingApi.executeSql({
++      module: directModule,
++      report_name: directReportName,
++      sql_query: directSql,
++    });
++
++    toast.dismiss('direct-sql');
++    if (isApiError(response)) {
++      toast.error(response.error.message || 'SQL execution failed.');
++    } else {
++      toast.success('SQL report generated. Downloading workbook...');
++      downloadWorkbook(response, directReportName || 'BIP_SQL_Report');
++    }
++    setIsRunningSql(false);
++  };
++
+   if (!user) return <Navigate to="/login" />;
+   if (!canAccess) return <Navigate to="/dashboard" />;
+ 
+   const isAllSelected = reports.length > 0 && selectedIds.size === reports.length;
++  const oracleConnected = oracleStatus?.connected === true;
+ 
+   return (
+     <>
+-    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-250 p-6 lg:p-8">
+-      
+-      {/* Header Section */}
++      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-250 p-6 lg:p-8">
+         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+           <div>
+-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
++            <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
+               <BarChart3 className="text-[#185FA5]" size={32} />
+               BIP Reporting Tool
+             </h1>
+-            <p className="text-gray-500 mt-2">
+-              Select available dynamic SQL configurations and execute them directly against your Oracle Fusion environment.
++            <p className="text-gray-500 dark:text-slate-400 mt-2">
++              Connect Oracle, run SQL through the BIP executor, and download the generated workbook from this page.
+             </p>
+           </div>
+-          
+-          <div className="flex items-center gap-3">
+-            <Button 
++
++          <div className="flex flex-wrap items-center gap-3">
++            <Button
++              onClick={() => setOracleModalOpen(true)}
++              variant={oracleConnected ? 'outline' : 'default'}
++              className={oracleConnected
++                ? 'gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
++                : 'gap-2 bg-[#185FA5] text-white'}
++              size="lg"
++            >
++              <KeyRound className="h-5 w-5" />
++              {oracleConnected ? 'Oracle Connected' : 'Connect Oracle'}
++            </Button>
++            <Button
+               onClick={() => setBipModalOpen(true)}
+               variant="outline"
+-              className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
++              className="gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-800 dark:hover:text-emerald-200"
+               size="lg"
+             >
+               <PlusCircle className="h-5 w-5" />
+-              New BIP Report
++              Save SQL Report
+             </Button>
+-            
+-            <Button 
+-              onClick={handleExecute}
+-              disabled={selectedIds.size === 0 || isExecuting}
++          </div>
++        </div>
++
++        <Card className="border dark:border-white/10 shadow-sm rounded-xl overflow-hidden bg-white dark:bg-slate-950">
++          <div className="border-b dark:border-white/10 bg-gray-50 dark:bg-slate-900 px-5 py-3 flex items-center justify-between gap-3">
++            <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
++              <TerminalSquare size={16} />
++              Run SQL Query
++            </div>
++            <span className="text-xs text-gray-500 dark:text-slate-400">
++              {oracleConnected ? `Connected as ${oracleStatus?.oracle_username}` : 'Oracle credentials required'}
++            </span>
++          </div>
++
++          <form onSubmit={handleRunDirectSql} className="p-5 space-y-4">
++            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
++              <div className="space-y-2">
++                <Label htmlFor="direct-module">Module</Label>
++                <Input
++                  id="direct-module"
++                  value={directModule}
++                  onChange={event => setDirectModule(event.target.value)}
++                  disabled={isRunningSql}
++                />
++              </div>
++              <div className="space-y-2">
++                <Label htmlFor="direct-report-name">Report Name</Label>
++                <Input
++                  id="direct-report-name"
++                  value={directReportName}
++                  onChange={event => setDirectReportName(event.target.value)}
++                  disabled={isRunningSql}
++                />
++              </div>
++            </div>
++            <div className="space-y-2">
++              <Label htmlFor="direct-sql">SQL Query</Label>
++              <Textarea
++                id="direct-sql"
++                value={directSql}
++                onChange={event => setDirectSql(event.target.value)}
++                disabled={isRunningSql}
++                className="min-h-[220px] font-mono text-sm"
++              />
++            </div>
++            <div className="flex justify-end">
++              <Button
++                type="submit"
++                disabled={!oracleConnected || isRunningSql}
++                className="gap-2 bg-[#185FA5] hover:bg-[#0D3B6E] text-white"
++                size="lg"
++              >
++                {isRunningSql ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlayCircle className="h-5 w-5" />}
++                {isRunningSql ? 'Running SQL...' : 'Run SQL & Download'}
++              </Button>
++            </div>
++          </form>
++        </Card>
++
++        <Card className="border dark:border-white/10 shadow-sm rounded-xl overflow-hidden bg-white dark:bg-slate-950">
++          <div className="border-b dark:border-white/10 bg-gray-50 dark:bg-slate-900 px-5 py-3 flex items-center justify-between gap-3">
++            <div className="text-sm font-medium text-[#185FA5] flex items-center gap-2">
++              <Database size={16} />
++              Saved Data Models
++            </div>
++            <Button
++              onClick={handleExecuteSelected}
++              disabled={selectedIds.size === 0 || isExecuting || !oracleConnected}
+               className="bg-[#185FA5] hover:bg-[#0D3B6E] text-white shadow-md transition-all gap-2"
+-              size="lg"
+             >
+-              {isExecuting ? (
+-                <Loader2 className="h-5 w-5 animate-spin" />
+-              ) : (
+-                <PlayCircle className="h-5 w-5" />
+-              )}
+-              {isExecuting ? 'Executing...' : `Run Selected Reports (${selectedIds.size})`}
++              {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
++              {isExecuting ? 'Executing...' : `Run Selected (${selectedIds.size})`}
+             </Button>
+           </div>
+-        </div>
+ 
+-        {/* Main Content Area */}
+-        <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
+-          <div className="p-1 border-b bg-gray-50 flex items-center gap-2">
+-             {/* Decorative tabs effect */}
+-             <div className="px-4 py-2 text-sm font-medium text-[#185FA5] border-b-2 border-[#185FA5] bg-white rounded-t-md flex items-center gap-2">
+-               <Database size={16} /> Data Models
+-             </div>
+-          </div>
+-          
+           <div className="p-0">
+             {isLoading ? (
+-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
++              <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-slate-500">
+                 <Loader2 className="h-8 w-8 animate-spin mb-4 text-[#185FA5]" />
+                 <p>Loading configurations...</p>
+               </div>
+             ) : reports.length === 0 ? (
+-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
++              <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-slate-500">
+                 <BarChart3 className="h-12 w-12 mb-4 opacity-20" />
+-                <p className="text-lg font-medium text-gray-600">No reports found.</p>
+-                <p className="text-sm mt-1">Use the "New BIP Report" button in the TopBar to add one.</p>
++                <p className="text-lg font-medium text-gray-600 dark:text-slate-300">No reports found.</p>
++                <p className="text-sm mt-1">Use Save SQL Report on this page to add one.</p>
+               </div>
+             ) : (
+               <div className="overflow-x-auto">
+                 <Table>
+                   <TableHeader>
+-                    <TableRow className="bg-gray-50 hover:bg-gray-50">
++                    <TableRow className="bg-gray-50 dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-900">
+                       <TableHead className="w-12 text-center">
+-                        <Checkbox 
++                        <Checkbox
+                           checked={isAllSelected}
+                           onCheckedChange={handleSelectAll}
+                           aria-label="Select all"
+@@ -183,27 +287,27 @@ export function BIPReportingPage() {
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+-                    {reports.map((report) => (
+-                      <TableRow 
+-                        key={report.id} 
++                    {reports.map(report => (
++                      <TableRow
++                        key={report.id}
+                         className={`transition-colors ${selectedIds.has(report.id) ? 'bg-[#185FA5]/5' : ''}`}
+                       >
+                         <TableCell className="text-center">
+-                          <Checkbox 
++                          <Checkbox
+                             checked={selectedIds.has(report.id)}
+-                            onCheckedChange={(checked) => handleSelectOne(report.id, checked as boolean)}
++                            onCheckedChange={checked => handleSelectOne(report.id, checked as boolean)}
+                             aria-label={`Select ${report.report_name}`}
+                           />
+                         </TableCell>
+                         <TableCell>
+-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
++                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-200">
+                             {report.module}
+                           </span>
+                         </TableCell>
+-                        <TableCell className="font-medium text-gray-900">
++                        <TableCell className="font-medium text-gray-900 dark:text-slate-100">
+                           {report.report_name}
+                         </TableCell>
+-                        <TableCell className="text-right text-gray-500 text-sm flex items-center justify-end gap-1.5">
++                        <TableCell className="text-right text-gray-500 dark:text-slate-400 text-sm flex items-center justify-end gap-1.5">
+                           <Clock size={14} className="opacity-70" />
+                           {format(new Date(report.created_at), 'MMM d, yyyy HH:mm')}
+                         </TableCell>
+@@ -217,12 +321,19 @@ export function BIPReportingPage() {
+         </Card>
+       </div>
+ 
+-      {/* Create BIP Report Modal */}
++      <ConnectOracleModal
++        open={oracleModalOpen}
++        onOpenChange={open => {
++          setOracleModalOpen(open);
++          if (!open) void fetchOracleStatus();
++        }}
++      />
++
+       <CreateBipReportModal
+         open={bipModalOpen}
+-        onOpenChange={(open) => {
++        onOpenChange={open => {
+           setBipModalOpen(open);
+-          if (!open) fetchReports(); // refresh table after closing
++          if (!open) void fetchReports();
+         }}
+       />
+     </>
+diff --git a/frontend/src/pages/ConfigPage.tsx b/frontend/src/pages/ConfigPage.tsx
+index 429cf49..e44b485 100644
+--- a/frontend/src/pages/ConfigPage.tsx
++++ b/frontend/src/pages/ConfigPage.tsx
+@@ -20,19 +20,16 @@ function ToolWelcomeBanner() {
+         background: 'linear-gradient(135deg, #0D3B6E 0%, #1E5FAA 50%, #185FA5 100%)',
+       }}
+     >
+-      {/* Ambient glow */}
+       <div
+         className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full opacity-25"
+         style={{ background: 'radial-gradient(circle, #60A5FA 0%, transparent 70%)' }}
+       />
+-      {/* Noise overlay */}
+       <div
+         className="absolute inset-0 opacity-[0.04]"
+         style={{
+           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+         }}
+       />
+-      {/* Large decorative icon */}
+       <div className="pointer-events-none absolute -bottom-4 -right-4 opacity-10">
+         <Database size={180} strokeWidth={0.8} className="text-white" />
+       </div>
+@@ -46,8 +43,10 @@ function ToolWelcomeBanner() {
+             <Camera size={26} className="text-white" strokeWidth={1.5} />
+           </div>
+           <div className="flex-1">
+-            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2 tracking-wide"
+-              style={{ background: 'rgba(147,197,253,0.15)', color: '#93C5FD' }}>
++            <div
++              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2 tracking-wide"
++              style={{ background: 'rgba(147,197,253,0.15)', color: '#93C5FD' }}
++            >
+               REST API
+             </div>
+             <h1 className="text-2xl sm:text-3xl font-bold text-white leading-tight">
+@@ -62,7 +61,6 @@ function ToolWelcomeBanner() {
+           </div>
+         </div>
+ 
+-        {/* Feature pills */}
+         <div className="mt-6 flex flex-wrap gap-2">
+           {[
+             { icon: Globe, label: 'REST Endpoint Capture' },
+@@ -97,7 +95,7 @@ export function ConfigPage() {
+   const canCreate = usePermission('create_snapshot');
+ 
+   useEffect(() => {
+-    loadSnapshots();
++    void loadSnapshots();
+   }, []);
+ 
+   async function loadSnapshots() {
+@@ -119,7 +117,7 @@ export function ConfigPage() {
+       setModalOpen(false);
+       setEndpoint('');
+       setDescription('');
+-      loadSnapshots();
++      void loadSnapshots();
+     }
+     setSubmitting(false);
+   }
+@@ -137,8 +135,8 @@ export function ConfigPage() {
+       <ToolWelcomeBanner />
+       <div className="flex items-center justify-between mb-6">
+         <div>
+-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">Snapshots</h2>
+-          <p className="text-sm text-[#64748B] mt-0.5">Capture and compare system configurations.</p>
++          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Snapshots</h2>
++          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Capture and compare system configurations.</p>
+         </div>
+         {canCreate && (
+           <button
+@@ -151,7 +149,7 @@ export function ConfigPage() {
+         )}
+       </div>
+ 
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
++      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
+         {loading ? (
+           <div className="p-4">
+             <SkeletonTable columns={5} rows={4} />
+@@ -175,38 +173,38 @@ export function ConfigPage() {
+           <div className="overflow-x-auto">
+             <table className="w-full">
+               <thead>
+-                <tr className="bg-[#F3F4F6]">
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Snapshot ID</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">REST Endpoint</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Timestamp</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Delta</th>
++                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Snapshot ID</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">REST Endpoint</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Timestamp</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Delta</th>
+                   <th className="w-16"></th>
+                 </tr>
+               </thead>
+-              <tbody className="divide-y divide-[#E2E8F0]">
++              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
+                 {snapshots.map(snap => (
+                   <tr
+                     key={snap.id}
+-                    className="hover:bg-[#EAF2FB] cursor-pointer transition-colors"
++                    className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 cursor-pointer transition-colors"
+                     onClick={() => handleRowClick(snap)}
+                   >
+-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{snap.id}</td>
+-                    <td className="px-4 py-3 text-sm text-[#64748B] truncate max-w-[240px]">{snap.endpoint}</td>
+-                    <td className="px-4 py-3 text-sm text-[#64748B]">{new Date(snap.timestamp).toLocaleString()}</td>
++                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{snap.id}</td>
++                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400 truncate max-w-[240px]">{snap.endpoint}</td>
++                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{new Date(snap.timestamp).toLocaleString()}</td>
+                     <td className="px-4 py-3">
+                       <StatusBadge status={snap.status} pulse={snap.status === 'Processing'} />
+                     </td>
+-                    <td className="px-4 py-3 text-sm text-[#0F172A]">
++                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100">
+                       {snap.delta.added > 0 && <span className="text-[#0F6E56]">+{snap.delta.added}</span>}
+                       {snap.delta.removed > 0 && <span className="text-[#993C1D] ml-1">-{snap.delta.removed}</span>}
+                       {snap.delta.changed > 0 && <span className="text-[#BA7517] ml-1">~{snap.delta.changed}</span>}
+                       {snap.delta.added === 0 && snap.delta.removed === 0 && snap.delta.changed === 0 && (
+-                        <span className="text-[#94A3B8]">0 changed</span>
++                        <span className="text-[#94A3B8] dark:text-slate-500">0 changed</span>
+                       )}
+                     </td>
+                     <td className="px-4 py-3">
+-                      <ChevronRight size={16} className="text-[#94A3B8]" />
++                      <ChevronRight size={16} className="text-[#94A3B8] dark:text-slate-500" />
+                     </td>
+                   </tr>
+                 ))}
+@@ -216,43 +214,42 @@ export function ConfigPage() {
+         )}
+       </div>
+ 
+-      {/* New Snapshot Modal */}
+       {modalOpen && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center">
+           <div className="absolute inset-0 bg-black/45" onClick={() => setModalOpen(false)} />
+-          <div className="relative bg-white rounded-xl p-6 w-full max-w-[560px] mx-4 shadow-xl" style={{ animation: 'scale-in 200ms ease-out' }}>
++          <div className="relative bg-white dark:bg-slate-950 rounded-xl p-6 w-full max-w-[560px] mx-4 shadow-xl border border-transparent dark:border-white/10" style={{ animation: 'scale-in 200ms ease-out' }}>
+             <div className="flex items-center justify-between mb-4">
+-              <h2 className="text-lg font-semibold text-[#0F172A]">Create New Snapshot</h2>
+-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded">
+-                <X size={18} className="text-[#64748B]" />
++              <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">Create New Snapshot</h2>
++              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
++                <X size={18} className="text-[#64748B] dark:text-slate-400" />
+               </button>
+             </div>
+             <form onSubmit={handleCreate} className="space-y-4">
+               <div>
+-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">REST Endpoint URL</label>
++                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">REST Endpoint URL</label>
+                 <input
+                   type="url"
+                   value={endpoint}
+                   onChange={e => setEndpoint(e.target.value)}
+                   placeholder="https://api.company.com/v1/config"
+-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
++                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
+                   required
+                 />
+               </div>
+               <div>
+-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Description <span className="text-[#94A3B8] font-normal">(optional)</span></label>
++                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Description <span className="text-[#94A3B8] dark:text-slate-500 font-normal">(optional)</span></label>
+                 <textarea
+                   value={description}
+                   onChange={e => setDescription(e.target.value)}
+                   rows={3}
+-                  className="w-full px-3 py-2 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] resize-none"
++                  className="w-full px-3 py-2 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] resize-none"
+                 />
+               </div>
+               <div className="flex justify-end gap-2 pt-2">
+                 <button
+                   type="button"
+                   onClick={() => setModalOpen(false)}
+-                  className="px-4 py-2 text-sm font-medium text-[#64748B] hover:bg-gray-50 rounded-md transition-colors"
++                  className="px-4 py-2 text-sm font-medium text-[#64748B] dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
+                 >
+                   Cancel
+                 </button>
+@@ -269,44 +266,43 @@ export function ConfigPage() {
+         </div>
+       )}
+ 
+-      {/* Diff Slide-over */}
+       {selectedSnapshot && (
+         <div className="fixed inset-0 z-50 flex justify-end">
+           <div className="absolute inset-0 bg-black/45" onClick={() => setSelectedSnapshot(null)} />
+           <div
+-            className="relative bg-white w-full max-w-[480px] h-full shadow-xl overflow-auto"
++            className="relative bg-white dark:bg-slate-950 w-full max-w-[480px] h-full shadow-xl overflow-auto border-l border-transparent dark:border-white/10"
+             style={{ animation: 'slide-in-right 250ms cubic-bezier(0.32, 0.72, 0, 1)' }}
+           >
+-            <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-6 py-4 flex items-center justify-between z-10">
++            <div className="sticky top-0 bg-white dark:bg-slate-950 border-b border-[#E2E8F0] dark:border-white/10 px-6 py-4 flex items-center justify-between z-10">
+               <div>
+-                <h2 className="text-lg font-semibold text-[#0F172A]">{selectedSnapshot.id}</h2>
+-                <p className="text-sm text-[#64748B]">{selectedSnapshot.endpoint}</p>
++                <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">{selectedSnapshot.id}</h2>
++                <p className="text-sm text-[#64748B] dark:text-slate-400">{selectedSnapshot.endpoint}</p>
+               </div>
+-              <button onClick={() => setSelectedSnapshot(null)} className="p-1 hover:bg-gray-100 rounded">
+-                <X size={18} className="text-[#64748B]" />
++              <button onClick={() => setSelectedSnapshot(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
++                <X size={18} className="text-[#64748B] dark:text-slate-400" />
+               </button>
+             </div>
+             <div className="p-6">
+               {diffLoading ? (
+                 <div className="space-y-3">
+                   {Array.from({ length: 4 }).map((_, i) => (
+-                    <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
++                    <div key={i} className="h-16 bg-gray-100 dark:bg-slate-800 rounded animate-pulse" />
+                   ))}
+                 </div>
+               ) : diffData.length === 0 ? (
+                 <div className="text-center py-8">
+-                  <CheckCircle2 size={48} className="text-[#CBD5E1] mx-auto mb-3" />
+-                  <p className="text-sm text-[#64748B]">No changes detected in this snapshot.</p>
++                  <CheckCircle2 size={48} className="text-[#CBD5E1] dark:text-slate-600 mx-auto mb-3" />
++                  <p className="text-sm text-[#64748B] dark:text-slate-400">No changes detected in this snapshot.</p>
+                 </div>
+               ) : (
+                 <div className="space-y-3">
+                   {diffData.map((diff, i) => (
+-                    <div key={i} className="border border-[#E2E8F0] rounded-lg p-4">
++                    <div key={i} className="border border-[#E2E8F0] dark:border-white/10 rounded-lg p-4">
+                       <div className="flex items-center gap-2 mb-2">
+                         {diff.type === 'added' && <ArrowUp size={14} className="text-[#0F6E56]" />}
+                         {diff.type === 'removed' && <ArrowDown size={14} className="text-[#993C1D]" />}
+                         {diff.type === 'changed' && <AlertCircle size={14} className="text-[#BA7517]" />}
+-                        <span className="text-sm font-medium text-[#0F172A]">{diff.field}</span>
++                        <span className="text-sm font-medium text-[#0F172A] dark:text-slate-100">{diff.field}</span>
+                         <span
+                           className="text-xs font-medium px-1.5 py-0.5 rounded capitalize"
+                           style={{
+@@ -318,10 +314,10 @@ export function ConfigPage() {
+                         </span>
+                       </div>
+                       {diff.oldValue !== null && (
+-                        <div className="text-sm text-[#64748B] line-through">{String(diff.oldValue)}</div>
++                        <div className="text-sm text-[#64748B] dark:text-slate-400 line-through">{String(diff.oldValue)}</div>
+                       )}
+                       {diff.newValue !== null && (
+-                        <div className="text-sm font-medium text-[#0F172A]">{String(diff.newValue)}</div>
++                        <div className="text-sm font-medium text-[#0F172A] dark:text-slate-100">{String(diff.newValue)}</div>
+                       )}
+                     </div>
+                   ))}
+diff --git a/frontend/src/pages/DashboardPage.tsx b/frontend/src/pages/DashboardPage.tsx
+index 429128c..3cdbf91 100644
+--- a/frontend/src/pages/DashboardPage.tsx
++++ b/frontend/src/pages/DashboardPage.tsx
+@@ -93,18 +93,18 @@ export function DashboardPage() {
+   );
+ 
+   return (
+-    <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
++    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0A0F1C] relative overflow-hidden transition-colors">
+       {/* Ambient background orbs */}
+       <div
+-        className="pointer-events-none absolute -top-64 -left-64 h-[600px] w-[600px] rounded-full opacity-20"
++        className="pointer-events-none absolute -top-64 -left-64 h-[600px] w-[600px] rounded-full opacity-15 dark:opacity-20"
+         style={{ background: 'radial-gradient(circle, #185FA5 0%, transparent 70%)' }}
+       />
+       <div
+-        className="pointer-events-none absolute -bottom-64 -right-64 h-[600px] w-[600px] rounded-full opacity-15"
++        className="pointer-events-none absolute -bottom-64 -right-64 h-[600px] w-[600px] rounded-full opacity-10 dark:opacity-15"
+         style={{ background: 'radial-gradient(circle, #0F6E56 0%, transparent 70%)' }}
+       />
+       <div
+-        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[900px] w-[900px] rounded-full opacity-5"
++        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[900px] w-[900px] rounded-full opacity-[0.04] dark:opacity-5"
+         style={{ background: 'radial-gradient(circle, #BA7517 0%, transparent 70%)' }}
+       />
+ 
+@@ -112,14 +112,14 @@ export function DashboardPage() {
+ 
+         {/* Header */}
+         <div className="mb-10 lg:mb-14">
+-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 mb-5 backdrop-blur-sm">
++          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/75 px-3 py-1.5 mb-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+-            <span className="text-xs font-medium text-white/60 tracking-wide uppercase">MigrateOS Platform</span>
++            <span className="text-xs font-medium text-slate-600 tracking-wide uppercase dark:text-white/60">MigrateOS Platform</span>
+           </div>
+-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight">
++          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white leading-tight">
+             Hi, <span className="bg-gradient-to-r from-[#60A5FA] to-[#34D399] bg-clip-text text-transparent">{firstName}</span> ≡ƒæï
+           </h1>
+-          <p className="mt-3 text-base sm:text-lg text-white/50 max-w-xl">
++          <p className="mt-3 text-base sm:text-lg text-slate-600 dark:text-white/50 max-w-xl">
+             Welcome to the ERP Migration Platform. Choose a tool below to get started.
+           </p>
+         </div>
+@@ -133,7 +133,7 @@ export function DashboardPage() {
+               <Link
+                 key={tool.path}
+                 to={tool.path}
+-                className="group relative block rounded-2xl overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-white/40"
++                className="group relative block rounded-2xl overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-[#185FA5]/40 dark:focus-visible:ring-white/40"
+                 style={{ '--glow': tool.glowColor } as React.CSSProperties}
+               >
+                 {/* Card gradient background */}
+@@ -239,17 +239,17 @@ export function DashboardPage() {
+         </div>
+ 
+         {visibleTools.length === 0 && (
+-          <div className="rounded-lg border border-white/10 bg-white/5 px-6 py-10 text-center">
+-            <ShieldCheck size={32} className="mx-auto text-white/35 mb-3" />
+-            <h2 className="text-lg font-semibold text-white">No tools assigned</h2>
+-            <p className="mt-2 text-sm text-white/50">
++          <div className="rounded-lg border border-slate-200 bg-white/75 px-6 py-10 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
++            <ShieldCheck size={32} className="mx-auto text-slate-400 dark:text-white/35 mb-3" />
++            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">No tools assigned</h2>
++            <p className="mt-2 text-sm text-slate-600 dark:text-white/50">
+               Ask an administrator to assign access from the Admin Control Panel.
+             </p>
+           </div>
+         )}
+ 
+         {/* Footer note */}
+-        <p className="mt-10 text-center text-xs text-white/25">
++        <p className="mt-10 text-center text-xs text-slate-500 dark:text-white/25">
+           MigrateOS Enterprise Data Migration Platform ┬╖ All sessions are monitored and logged.
+         </p>
+       </div>
+diff --git a/frontend/src/pages/DataConversionPage.tsx b/frontend/src/pages/DataConversionPage.tsx
+index b78e51a..e720d7b 100644
+--- a/frontend/src/pages/DataConversionPage.tsx
++++ b/frontend/src/pages/DataConversionPage.tsx
+@@ -56,7 +56,7 @@ function ToolWelcomeBanner() {
+               Validation &amp; Verification Engine
+             </p>
+             <p className="mt-2 text-sm text-white/55 max-w-2xl leading-relaxed">
+-              Run end-to-end ETL pipelines ΓÇö Extract, Transform, Validate, Verify, and Load. Ensure data integrity and completeness before committing to the target system.
++              Run end-to-end ETL pipelines - Extract, Transform, Validate, Verify, and Load. Ensure data integrity and completeness before committing to the target system.
+             </p>
+           </div>
+         </div>
+@@ -121,8 +121,8 @@ export function DataConversionPage() {
+       <ToolWelcomeBanner />
+       <div className="flex items-center justify-between mb-6">
+         <div>
+-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">ETL Jobs</h2>
+-          <p className="text-sm text-[#64748B] mt-0.5">Extract ΓåÆ Transform ΓåÆ Validate ΓåÆ Verify ΓåÆ Load</p>
++          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">ETL Jobs</h2>
++          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Extract - Transform - Validate - Verify - Load</p>
+         </div>
+         {canRun && (
+           <button
+@@ -135,11 +135,9 @@ export function DataConversionPage() {
+         )}
+       </div>
+ 
+-      {/* ETL Stepper */}
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg p-6 mb-6">
++      <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-6 mb-6">
+         <div className="flex items-center justify-between max-w-[800px] mx-auto">
+           {ETL_STEPS.map((step, i) => {
+-            // Determine step state based on active jobs
+             const hasRunning = activeJobs.length > 0;
+             const stepStatus = hasRunning
+               ? i < 2 ? 'completed' : i === 2 ? 'active' : 'pending'
+@@ -151,23 +149,31 @@ export function DataConversionPage() {
+               <div key={step} className="flex items-center flex-1">
+                 <div className="flex flex-col items-center">
+                   <div
+-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all duration-300
+-                      ${stepStatus === 'completed'
++                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all duration-300 ${
++                      stepStatus === 'completed'
+                         ? 'bg-[#0F6E56] border-[#0F6E56] text-white'
+                         : stepStatus === 'active'
+                           ? 'border-[#0F6E56] text-[#0F6E56] animate-pulse'
+-                          : 'border-[#E2E8F0] text-[#94A3B8]'
+-                      }`}
++                          : 'border-[#E2E8F0] dark:border-white/10 text-[#94A3B8] dark:text-slate-500'
++                    }`}
+                     style={stepStatus === 'active' ? { boxShadow: '0 0 0 4px rgba(15,110,86,0.15)' } : {}}
+                   >
+                     {stepStatus === 'completed' ? <CheckCircle2 size={14} /> : i + 1}
+                   </div>
+-                  <span className={`text-xs mt-2 font-medium ${stepStatus === 'completed' ? 'text-[#0F6E56]' : stepStatus === 'active' ? 'text-[#0F6E56]' : 'text-[#94A3B8]'}`}>
++                  <span className={`text-xs mt-2 font-medium ${
++                    stepStatus === 'completed'
++                      ? 'text-[#0F6E56]'
++                      : stepStatus === 'active'
++                        ? 'text-[#0F6E56]'
++                        : 'text-[#94A3B8] dark:text-slate-500'
++                  }`}>
+                     {step}
+                   </span>
+                 </div>
+                 {i < ETL_STEPS.length - 1 && (
+-                  <div className={`flex-1 h-0.5 mx-2 transition-colors duration-300 ${stepStatus === 'completed' ? 'bg-[#0F6E56]' : 'bg-[#E2E8F0]'}`} />
++                  <div className={`flex-1 h-0.5 mx-2 transition-colors duration-300 ${
++                    stepStatus === 'completed' ? 'bg-[#0F6E56]' : 'bg-[#E2E8F0] dark:bg-white/10'
++                  }`} />
+                 )}
+               </div>
+             );
+@@ -175,16 +181,15 @@ export function DataConversionPage() {
+         </div>
+       </div>
+ 
+-      {/* Active Jobs */}
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden mb-6">
+-        <div className="px-6 py-4 border-b border-[#E2E8F0]">
+-          <h2 className="text-base font-semibold text-[#0F172A]">Active Jobs</h2>
++      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden mb-6">
++        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10">
++          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Active Jobs</h2>
+         </div>
+         {jobsLoading && activeJobs.length === 0 ? (
+           <div className="p-4">
+             <div className="space-y-3">
+               {Array.from({ length: 2 }).map((_, i) => (
+-                <div key={i} className="h-14 bg-gray-100 rounded animate-pulse" />
++                <div key={i} className="h-14 bg-gray-100 dark:bg-slate-800 rounded animate-pulse" />
+               ))}
+             </div>
+           </div>
+@@ -198,24 +203,24 @@ export function DataConversionPage() {
+           <div className="overflow-x-auto">
+             <table className="w-full">
+               <thead>
+-                <tr className="bg-[#F3F4F6]">
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Job ID</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Progress</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Started</th>
++                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Job ID</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Progress</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Started</th>
+                 </tr>
+               </thead>
+-              <tbody className="divide-y divide-[#E2E8F0]">
++              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
+                 {activeJobs.map(job => (
+-                  <tr key={job.id} className="hover:bg-[#EAF2FB] transition-colors">
+-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{job.id}</td>
++                  <tr key={job.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
++                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{job.id}</td>
+                     <td className="px-4 py-3 w-[280px]">
+                       <ProgressBarPulse value={job.progress} status={job.status} />
+                     </td>
+                     <td className="px-4 py-3">
+                       <StatusBadge status={job.status === 'running' ? 'Running' : 'Pending'} pulse={job.status === 'running'} />
+                     </td>
+-                    <td className="px-4 py-3 text-sm text-[#64748B]">{new Date(job.startedAt).toLocaleString()}</td>
++                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{new Date(job.startedAt).toLocaleString()}</td>
+                   </tr>
+                 ))}
+               </tbody>
+@@ -224,10 +229,9 @@ export function DataConversionPage() {
+         )}
+       </div>
+ 
+-      {/* Completed Jobs */}
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
+-        <div className="px-6 py-4 border-b border-[#E2E8F0]">
+-          <h2 className="text-base font-semibold text-[#0F172A]">Completed Jobs</h2>
++      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
++        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10">
++          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Completed Jobs</h2>
+         </div>
+         {completedJobs.length === 0 ? (
+           <EmptyState
+@@ -239,27 +243,27 @@ export function DataConversionPage() {
+           <div className="overflow-x-auto">
+             <table className="w-full">
+               <thead>
+-                <tr className="bg-[#F3F4F6]">
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Job ID</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Source ΓåÆ Target</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Records</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Duration</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
++                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Job ID</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Source - Target</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Records</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Duration</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
+                   <th className="w-16"></th>
+                 </tr>
+               </thead>
+-              <tbody className="divide-y divide-[#E2E8F0]">
++              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
+                 {completedJobs.map(job => (
+-                  <tr key={job.id} className="hover:bg-[#EAF2FB] transition-colors">
+-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{job.id}</td>
+-                    <td className="px-4 py-3 text-sm text-[#64748B]">{job.source} ΓåÆ {job.target}</td>
+-                    <td className="px-4 py-3 text-sm text-[#0F172A]">{new Intl.NumberFormat().format(job.recordsProcessed || 0)}</td>
+-                    <td className="px-4 py-3 text-sm text-[#64748B]">{job.duration || '-'}</td>
++                  <tr key={job.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
++                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{job.id}</td>
++                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{job.source} - {job.target}</td>
++                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100">{new Intl.NumberFormat().format(job.recordsProcessed || 0)}</td>
++                    <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{job.duration || '-'}</td>
+                     <td className="px-4 py-3">
+                       <StatusBadge status={job.status === 'completed' ? 'Completed' : 'Failed'} />
+                     </td>
+                     <td className="px-4 py-3">
+-                      <button className="p-1.5 hover:bg-gray-100 rounded text-[#64748B] hover:text-[#185FA5] transition-colors">
++                      <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 rounded text-[#64748B] dark:text-slate-400 hover:text-[#185FA5] transition-colors">
+                         <Download size={16} />
+                       </button>
+                     </td>
+@@ -271,24 +275,23 @@ export function DataConversionPage() {
+         )}
+       </div>
+ 
+-      {/* Run ETL Job Modal */}
+       {modalOpen && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center">
+           <div className="absolute inset-0 bg-black/45" onClick={() => setModalOpen(false)} />
+-          <div className="relative bg-white rounded-xl p-6 w-full max-w-[480px] mx-4 shadow-xl" style={{ animation: 'scale-in 200ms ease-out' }}>
++          <div className="relative bg-white dark:bg-slate-950 rounded-xl p-6 w-full max-w-[480px] mx-4 shadow-xl border border-transparent dark:border-white/10" style={{ animation: 'scale-in 200ms ease-out' }}>
+             <div className="flex items-center justify-between mb-4">
+-              <h2 className="text-lg font-semibold text-[#0F172A]">Configure ETL Job</h2>
+-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded">
+-                <X size={18} className="text-[#64748B]" />
++              <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100">Configure ETL Job</h2>
++              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded">
++                <X size={18} className="text-[#64748B] dark:text-slate-400" />
+               </button>
+             </div>
+             <form onSubmit={handleRunJob} className="space-y-4">
+               <div>
+-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Source System</label>
++                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Source System</label>
+                 <select
+                   value={source}
+                   onChange={e => setSource(e.target.value)}
+-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white"
++                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white dark:bg-slate-900"
+                 >
+                   <option>Legacy HR</option>
+                   <option>Legacy Payroll</option>
+@@ -296,11 +299,11 @@ export function DataConversionPage() {
+                 </select>
+               </div>
+               <div>
+-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Target System</label>
++                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Target System</label>
+                 <select
+                   value={target}
+                   onChange={e => setTarget(e.target.value)}
+-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white"
++                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)] bg-white dark:bg-slate-900"
+                 >
+                   <option>Modern HRIS</option>
+                   <option>Modern Payroll</option>
+@@ -308,20 +311,20 @@ export function DataConversionPage() {
+                 </select>
+               </div>
+               <div>
+-                <label className="block text-sm font-medium text-[#0F172A] mb-1.5">Job Name <span className="text-[#94A3B8] font-normal">(optional)</span></label>
++                <label className="block text-sm font-medium text-[#0F172A] dark:text-slate-100 mb-1.5">Job Name <span className="text-[#94A3B8] dark:text-slate-500 font-normal">(optional)</span></label>
+                 <input
+                   type="text"
+                   value={jobName}
+                   onChange={e => setJobName(e.target.value)}
+                   placeholder={`ETL-${Date.now()}`}
+-                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
++                  className="w-full h-10 px-3 rounded-md border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-[#0F172A] dark:text-slate-100 focus:outline-none focus:border-[#185FA5] focus:ring-3 focus:ring-[rgba(24,95,165,0.15)]"
+                 />
+               </div>
+               <div className="flex justify-end gap-2 pt-2">
+                 <button
+                   type="button"
+                   onClick={() => setModalOpen(false)}
+-                  className="px-4 py-2 text-sm font-medium text-[#64748B] hover:bg-gray-50 rounded-md transition-colors"
++                  className="px-4 py-2 text-sm font-medium text-[#64748B] dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
+                 >
+                   Cancel
+                 </button>
+diff --git a/frontend/src/pages/LoginPage.tsx b/frontend/src/pages/LoginPage.tsx
+index 1f9eefd..8f46b12 100644
+--- a/frontend/src/pages/LoginPage.tsx
++++ b/frontend/src/pages/LoginPage.tsx
+@@ -148,9 +148,8 @@ export function LoginPage() {
+                     setMode('signin');
+                     setError('');
+                   }}
+-                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+-                    mode === 'signin' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
+-                  }`}
++                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'signin' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
++                    }`}
+                 >
+                   Sign in
+                 </button>
+@@ -160,9 +159,8 @@ export function LoginPage() {
+                     setMode('signup');
+                     setError('');
+                   }}
+-                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+-                    mode === 'signup' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
+-                  }`}
++                  className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'signup' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#0F172A]'
++                    }`}
+                 >
+                   Sign up
+                 </button>
+diff --git a/frontend/src/pages/PayrollPage.tsx b/frontend/src/pages/PayrollPage.tsx
+index 5a985bf..b1ab5b9 100644
+--- a/frontend/src/pages/PayrollPage.tsx
++++ b/frontend/src/pages/PayrollPage.tsx
+@@ -89,7 +89,7 @@ export function PayrollPage() {
+   const canResolve = usePermission('run_reconciliation');
+ 
+   useEffect(() => {
+-    loadExceptions();
++    void loadExceptions();
+   }, []);
+ 
+   async function loadExceptions() {
+@@ -106,7 +106,7 @@ export function PayrollPage() {
+       toast.error(res.error.message);
+     } else {
+       toast.success(`Reconciliation complete: ${res.data.matchRate}% match rate`);
+-      loadExceptions();
++      void loadExceptions();
+     }
+     setReconciling(false);
+   }
+@@ -117,7 +117,7 @@ export function PayrollPage() {
+       toast.error(res.error.message);
+     } else {
+       toast.success(`Exception ${id} marked as resolved`);
+-      loadExceptions();
++      void loadExceptions();
+     }
+   }
+ 
+@@ -129,8 +129,8 @@ export function PayrollPage() {
+       <ToolWelcomeBanner />
+       <div className="flex items-center justify-between mb-6">
+         <div>
+-          <h2 className="text-lg font-semibold text-[#0F172A] tracking-tight">Reconciliation Summary</h2>
+-          <p className="text-sm text-[#64748B] mt-0.5">Compare pre/post migration payroll records.</p>
++          <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Reconciliation Summary</h2>
++          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-0.5">Compare pre/post migration payroll records.</p>
+         </div>
+         {canRun && (
+           <button
+@@ -144,7 +144,6 @@ export function PayrollPage() {
+         )}
+       </div>
+ 
+-      {/* Summary Stats */}
+       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+         <MetricCard
+           label="Total Employees"
+@@ -173,11 +172,10 @@ export function PayrollPage() {
+         />
+       </div>
+ 
+-      {/* Exceptions Table */}
+-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
+-        <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
+-          <h2 className="text-base font-semibold text-[#0F172A]">Exceptions</h2>
+-          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#64748B] hover:text-[#185FA5] hover:bg-[#EAF2FB] rounded-md transition-colors">
++      <div className="bg-white dark:bg-slate-950/90 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden">
++        <div className="px-6 py-4 border-b border-[#E2E8F0] dark:border-white/10 flex items-center justify-between">
++          <h2 className="text-base font-semibold text-[#0F172A] dark:text-slate-100">Exceptions</h2>
++          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#64748B] dark:text-slate-400 hover:text-[#185FA5] hover:bg-[#EAF2FB] dark:hover:bg-slate-900 rounded-md transition-colors">
+             <Download size={14} />
+             Export CSV
+           </button>
+@@ -196,20 +194,20 @@ export function PayrollPage() {
+           <div className="overflow-x-auto">
+             <table className="w-full">
+               <thead>
+-                <tr className="bg-[#F3F4F6]">
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Employee ID</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Field</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Legacy Value</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">New Value</th>
+-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B]">Status</th>
++                <tr className="bg-[#F3F4F6] dark:bg-slate-900">
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Employee ID</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Field</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Legacy Value</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">New Value</th>
++                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
+                   <th className="w-20"></th>
+                 </tr>
+               </thead>
+-              <tbody className="divide-y divide-[#E2E8F0]">
++              <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
+                 {exceptions.map(exc => (
+-                  <tr key={exc.id} className="hover:bg-[#EAF2FB] transition-colors">
+-                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A]">{exc.employeeId}</td>
+-                    <td className="px-4 py-3 text-sm text-[#0F172A] capitalize">{exc.field.replace('_', ' ')}</td>
++                  <tr key={exc.id} className="hover:bg-[#EAF2FB] dark:hover:bg-slate-900/70 transition-colors">
++                    <td className="px-4 py-3 font-mono text-sm text-[#0F172A] dark:text-slate-100">{exc.employeeId}</td>
++                    <td className="px-4 py-3 text-sm text-[#0F172A] dark:text-slate-100 capitalize">{exc.field.replace('_', ' ')}</td>
+                     <td className="px-4 py-3">
+                       <DataReveal value={exc.legacyValue} isSensitive={exc.isSensitive} />
+                     </td>
+@@ -223,7 +221,7 @@ export function PayrollPage() {
+                       {canResolve && exc.status !== 'Resolved' && (
+                         <button
+                           onClick={() => handleResolve(exc.id)}
+-                          className="p-1.5 hover:bg-[rgba(15,110,86,0.1)] rounded text-[#64748B] hover:text-[#0F6E56] transition-colors"
++                          className="p-1.5 hover:bg-[rgba(15,110,86,0.1)] dark:hover:bg-[rgba(15,110,86,0.16)] rounded text-[#64748B] dark:text-slate-400 hover:text-[#0F6E56] transition-colors"
+                           title="Mark as resolved"
+                         >
+                           <CheckCircle2 size={16} />
+diff --git a/frontend/src/services/api.ts b/frontend/src/services/api.ts
+index dea25b5..af68462 100644
+--- a/frontend/src/services/api.ts
++++ b/frontend/src/services/api.ts
+@@ -555,15 +555,88 @@ export const trackingApi = {
+ 
+ export interface BipReportCreate {
+   module: string;
++  sub_module?: string;
+   report_name: string;
++  description?: string;
+   sql_query: string;
+ }
+ 
+-export interface BipReportResponse extends BipReportCreate {
++export interface BipReportResponse {
+   id: number;
++  module: string;
++  sub_module?: string | null;
++  report_name: string;
++  description?: string | null;
++  is_active: boolean;
+   created_at: string;
+ }
+ 
++export interface DirectBipSqlRequest {
++  module: string;
++  report_name: string;
++  sql_query: string;
++}
++
++export interface OracleStatus {
++  connected: boolean;
++  oracle_url?: string;
++  env_name?: string;
++  oracle_username?: string;
++  connected_at?: string | null;
++}
++
++export interface OracleConnectRequest {
++  oracle_url: string;
++  env_name: string;
++  oracle_username: string;
++  oracle_password: string;
++}
++
++export interface OracleConnectResponse {
++  message: string;
++  oracle_url: string;
++  env_name: string;
++  oracle_username: string;
++  connected_at: string;
++}
++
++async function authenticatedBlob(path: string, body: object): Promise<Blob | ApiError> {
++  let token: string | null = null;
++  try {
++    const saved = sessionStorage.getItem('migrateos_auth');
++    if (saved) token = JSON.parse(saved).token;
++  } catch { /* ignore parse errors */ }
++
++  if (!token) {
++    return { error: { code: 'AUTH_ERROR', message: 'No authentication token found. Please sign in.' } };
++  }
++
++  try {
++    const response = await fetch(`${API_BASE_URL}${path}`, {
++      method: 'POST',
++      headers: {
++        'Content-Type': 'application/json',
++        'Authorization': `Bearer ${token}`,
++      },
++      body: JSON.stringify(body),
++    });
++
++    if (!response.ok) {
++      const errBody = await response.json().catch(() => ({}));
++      return {
++        error: {
++          code: `HTTP_${response.status}`,
++          message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
++        },
++      };
++    }
++
++    return await response.blob();
++  } catch {
++    return { error: { code: 'NETWORK_ERROR', message: 'Could not reach the backend API.' } };
++  }
++}
++
+ export const bipReportingApi = {
+   createBipReport: (data: BipReportCreate) =>
+     authenticatedJson<any>('/api/v1/bip-reports/', {
+@@ -571,40 +644,14 @@ export const bipReportingApi = {
+       body: JSON.stringify(data),
+     }),
+   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
+-  executeBipReports: async (reportIds: number[]): Promise<Blob | ApiError> => {
+-    let token: string | null = null;
+-    try {
+-      const saved = sessionStorage.getItem('migrateos_auth');
+-      if (saved) token = JSON.parse(saved).token;
+-    } catch { /* ignore parse errors */ }
+-
+-    if (!token) {
+-      return { error: { code: 'AUTH_ERROR', message: 'No authentication token found. Please sign in.' } };
+-    }
+-
+-    try {
+-      const response = await fetch(`${API_BASE_URL}/api/v1/bip-reports/execute`, {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': `Bearer ${token}`,
+-        },
+-        body: JSON.stringify({ report_ids: reportIds }),
+-      });
+-
+-      if (!response.ok) {
+-        const errBody = await response.json().catch(() => ({}));
+-        return {
+-          error: {
+-            code: `HTTP_${response.status}`,
+-            message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
+-          },
+-        };
+-      }
+-
+-      return await response.blob();
+-    } catch {
+-      return { error: { code: 'NETWORK_ERROR', message: 'Could not reach the backend API.' } };
+-    }
+-  },
++  executeBipReports: (reportIds: number[]) =>
++    authenticatedBlob('/api/v1/bip-reports/execute', { report_ids: reportIds }),
++  executeSql: (data: DirectBipSqlRequest) =>
++    authenticatedBlob('/api/v1/bip-reports/execute-sql', data),
++  getOracleStatus: () => authenticatedJson<OracleStatus>('/api/v1/integrations/oracle/status'),
++  connectOracle: (data: OracleConnectRequest) =>
++    authenticatedJson<OracleConnectResponse>('/api/v1/integrations/oracle/connect', {
++      method: 'POST',
++      body: JSON.stringify(data),
++    }),
+ };

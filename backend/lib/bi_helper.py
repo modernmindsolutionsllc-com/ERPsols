@@ -2,16 +2,28 @@
 # lib/bi_helper.py
 
 import requests
+from requests import Session as RequestsSession
+from requests.auth import HTTPBasicAuth
 import sqlite3
 import base64
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 import textwrap
 from xml.etree.ElementTree import Element, SubElement, tostring
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # from lib.resources import db_path
 db_path = "legacy.db"
 
 BI_DEFAULT_TIMEOUT = 30
+
+
+def create_authenticated_session(username: str, password: str) -> RequestsSession:
+    """Create a requests Session with HTTP Basic Auth for SSO-protected Oracle environments."""
+    session = RequestsSession()
+    session.auth = HTTPBasicAuth(username, password)
+    session.verify = False
+    return session
 
 # ---------------------------------------------------------------------
 # URL helpers
@@ -43,13 +55,16 @@ def get_bip_ExternalReportWSSService_url(url: str) -> str:
 # ---------------------------------------------------------------------
 # Generic SOAP sender
 # ---------------------------------------------------------------------
-def send_soap_request(soap_url, soap_body):
+def send_soap_request(soap_url, soap_body, http_session=None):
     headers = {
         "Content-Type": "text/xml; charset=UTF-8",
         "Accept": "text/xml, */*",
     }
     try:
-        resp = requests.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)#timeout=300
+        if http_session:
+            resp = http_session.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
+        else:
+            resp = requests.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
         return resp
     except requests.exceptions.RequestException as e:
         return str(e)
@@ -57,14 +72,19 @@ def send_soap_request(soap_url, soap_body):
 # ---------------------------------------------------------------------
 # BI Login / BI Logout
 # ---------------------------------------------------------------------
-def fetch_bi_session_token(soap_url, username, password):
+from xml.sax.saxutils import escape
+
+def fetch_bi_session_token(soap_url, username, password, http_session=None):
+    safe_username = escape(username)
+    safe_password = escape(password)
+    
     soap_body = f"""
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService">
        <soapenv:Header/>
        <soapenv:Body>
           <pub:login>
-             <pub:userID>{username}</pub:userID>
-             <pub:password>{password}</pub:password>
+             <pub:userID>{safe_username}</pub:userID>
+             <pub:password>{safe_password}</pub:password>
           </pub:login>
        </soapenv:Body>
     </soapenv:Envelope>
@@ -75,7 +95,10 @@ def fetch_bi_session_token(soap_url, username, password):
         "SOAPAction": "login"
     }
 
-    resp = requests.post(soap_url, data=soap_body, headers=headers)
+    if http_session:
+        resp = http_session.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
+    else:
+        resp = requests.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
 
     # Parse SOAP Fault *before* raise_for_status so we can surface the real Oracle error message.
     # Oracle BIP returns HTTP 500 for auth failures; the real reason is inside <faultstring>.
@@ -115,8 +138,9 @@ def fetch_bi_session_token(soap_url, username, password):
 
 def bi_login(url, username, password):
     soap_url = get_bip_PublicReportService_url(url)
-    session_token = fetch_bi_session_token(soap_url, username, password)
-    return session_token
+    http_session = create_authenticated_session(username, password)
+    session_token = fetch_bi_session_token(soap_url, username, password, http_session=http_session)
+    return session_token, http_session
 
 def bi_logout_request(session_token):
     return f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -130,12 +154,12 @@ def bi_logout_request(session_token):
 </soapenv:Envelope>
 """
 
-def bi_logout(url, session_token):
+def bi_logout(url, session_token, http_session=None):
     if not session_token:
         return False  # logical error: nothing to logout
 
     soap_url = get_bip_PublicReportService_url(url)
-    resp = send_soap_request(soap_url, bi_logout_request(session_token))
+    resp = send_soap_request(soap_url, bi_logout_request(session_token), http_session=http_session)
 
     if isinstance(resp, str) or not resp.ok:
         return False
@@ -226,6 +250,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
     cursor = conn.cursor()
     
     session_token = None
+    http_session = None
     success = True
 
     append_log(f"⚙️ Validating setup for: {username} ({env_name})")
@@ -256,7 +281,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # Login
         # ---------------------------------------------------------------
         try:
-            session_token = bi_login(url, username, password)
+            session_token, http_session = bi_login(url, username, password)
 
             if not session_token:
                 raise RuntimeError("❌ Empty BI session token")
@@ -275,7 +300,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         for folder in folders_to_check:
             append_log(f"⏳ Checking folder: {folder}")
 
-            resp = send_soap_request(soap_url, folder_exists_request(folder, session_token)            )
+            resp = send_soap_request(soap_url, folder_exists_request(folder, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
                 append_log(f"❌ SOAP error while checking folder {folder}: {resp}")
@@ -302,7 +327,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         for path, obj_type, b64data in rows_full:
             append_log(f"⏳ Checking object: {path}")
 
-            resp = send_soap_request(soap_url, report_exists_request(path, session_token))
+            resp = send_soap_request(soap_url, report_exists_request(path, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
                 append_log(f"❌ SOAP error while checking object {path}: {resp}")
@@ -327,7 +352,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         for folder in missing_folders:
             append_log(f"📁 Creating folder: {folder}")
 
-            resp = send_soap_request(soap_url,create_folder_request(folder, session_token))
+            resp = send_soap_request(soap_url, create_folder_request(folder, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
                 append_log(f"❌ Failed to create folder {folder}: {resp}")
@@ -346,7 +371,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
 
             append_log(f"⬆️ Uploading {obj_type}: {path}")
 
-            resp = send_soap_request(soap_url, upload_report_request(path, obj_type, b64data, session_token))
+            resp = send_soap_request(soap_url, upload_report_request(path, obj_type, b64data, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
                 append_log(f"❌ Upload failed for {path}: {resp}")
@@ -399,7 +424,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         if session_token:
             try:
-                success = bi_logout(url, session_token)
+                success = bi_logout(url, session_token, http_session=http_session)
                 if success:
                     append_log("✅ BI Logout Successful")
                 else:
@@ -464,10 +489,10 @@ def generate_dynamic_sql_soap(sql_query, report_path, template, session_token):
 # ---------------------------------------------------------------------
 # Run BI SQL in session (used by sync_master)
 # ---------------------------------------------------------------------
-def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_query):
+def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_query, http_session=None):
     soap_body = generate_dynamic_sql_soap(sql_query, report_path, template, session_token)
 
-    resp = send_soap_request(soap_url, soap_body)
+    resp = send_soap_request(soap_url, soap_body, http_session=http_session)
     if isinstance(resp, str) or not resp.ok:
         raise RuntimeError(f"❌ SOAP error: {resp}")
 
@@ -526,7 +551,7 @@ def friendly_bi_error(err: Exception | str) -> str:
     # 4. Invalid credentials (Oracle SOAP fault message)
     # --------------------------------------------------
     if "invalid username or password" in msg or "failed to log into bi publisher" in msg:
-        return "Invalid Oracle username or password. Please reconnect Oracle with correct credentials."
+        return f"Invalid Oracle username or password: {original}"
 
     # --------------------------------------------------
     # 4. Authentication / authorization
@@ -548,12 +573,12 @@ def friendly_bi_error(err: Exception | str) -> str:
         return "Oracle BI server returned an internal error (500). Please try again later."
 
     # --------------------------------------------------
-    # 6. SOAP-level faults — return the raw message if readable
+    # 6. SOAP-level faults
     # --------------------------------------------------
     if "soap fault" in msg or "faultcode" in msg:
-        return f"Oracle BI API error: {original[:200]}"
+        return "Oracle BI returned an invalid API response. Please contact your administrator."
 
     # --------------------------------------------------
-    # 7. Fallback — return the raw message so it is actionable
+    # 7. Fallback
     # --------------------------------------------------
-    return f"Oracle BI error: {original[:200]}"
+    return f"An unexpected Oracle BI error occurred: {original}"

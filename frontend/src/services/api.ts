@@ -575,6 +575,7 @@ export interface DirectBipSqlRequest {
   module: string;
   report_name: string;
   sql_query: string;
+  env_name: string;
 }
 
 export interface OracleStatus {
@@ -599,6 +600,27 @@ export interface OracleConnectResponse {
   oracle_username: string;
   connected_at: string;
 }
+
+/* ── Multi-Environment Oracle Session Types ─────────────────────────────────── */
+
+export interface OracleSessionResponse {
+  id: number;
+  env_name: string;
+  oracle_url: string;
+  oracle_username: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OracleSessionCreate {
+  env_name: string;
+  oracle_url: string;
+  oracle_username: string;
+  oracle_password: string;
+}
+
+/* ── Blob Helper ────────────────────────────────────────────────────────────── */
 
 async function authenticatedBlob(path: string, body: object): Promise<Blob | ApiError> {
   let token: string | null = null;
@@ -637,6 +659,12 @@ async function authenticatedBlob(path: string, body: object): Promise<Blob | Api
   }
 }
 
+async function authenticatedDelete(path: string): Promise<{ message: string } | ApiError> {
+  return authenticatedJson<{ message: string }>(path, { method: 'DELETE' });
+}
+
+/* ── BIP Reporting API ─────────────────────────────────────────────────────── */
+
 export const bipReportingApi = {
   createBipReport: (data: BipReportCreate) =>
     authenticatedJson<any>('/api/v1/bip-reports/', {
@@ -644,14 +672,38 @@ export const bipReportingApi = {
       body: JSON.stringify(data),
     }),
   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
-  executeBipReports: (reportIds: number[]) =>
-    authenticatedBlob('/api/v1/bip-reports/execute', { report_ids: reportIds }),
+
+  executeBipReports: (reportIds: number[], envName: string) =>
+    authenticatedBlob('/api/v1/bip-reports/execute', {
+      report_ids: reportIds,
+      env_name: envName,
+    }),
+
   executeSql: (data: DirectBipSqlRequest) =>
     authenticatedBlob('/api/v1/bip-reports/execute-sql', data),
+
   getOracleStatus: () => authenticatedJson<OracleStatus>('/api/v1/integrations/oracle/status'),
+
   connectOracle: (data: OracleConnectRequest) =>
     authenticatedJson<OracleConnectResponse>('/api/v1/integrations/oracle/connect', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /* ── Multi-Environment Session CRUD ──────────────────────────────────────── */
+
+  getOracleSessions: () =>
+    authenticatedJson<OracleSessionResponse[]>('/api/v1/integrations/oracle/sessions'),
+
+  saveOracleSession: (data: OracleSessionCreate) =>
+    authenticatedJson<OracleSessionResponse>('/api/v1/integrations/oracle/sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteOracleSession: (envName: string) =>
+    authenticatedDelete(`/api/v1/integrations/oracle/sessions/${encodeURIComponent(envName)}`),
+
+  deleteAllOracleSessions: () =>
+    authenticatedDelete('/api/v1/integrations/oracle/sessions'),
 };

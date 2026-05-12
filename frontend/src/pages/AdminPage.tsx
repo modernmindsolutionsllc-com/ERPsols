@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { adminApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { formatActiveTime, formatLastActive } from '@/utils/formatters';
 import { toast } from 'sonner';
 import type { ACPUser, AdminTool, ApiError, ToolKey } from '@/types';
 import {
-  Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw, KeyRound, Trash2
+  Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw,
+  KeyRound, Trash2, ArrowRight,
 } from 'lucide-react';
+import { DASHBOARD_TOOLS } from '@/pages/DashboardPage';
 
 function formatDate(iso: string): string {
   try {
@@ -147,12 +150,52 @@ export function AdminPage() {
   const activeUsers = users.filter(u => !u.is_restricted).length;
   const restrictedUsers = users.filter(u => u.is_restricted).length;
 
+  const myTools = DASHBOARD_TOOLS.filter(t => currentUser?.tool_access?.includes(t.key));
+
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Admin Control Panel</h1>
-        <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1">Manage users, monitor sessions, and enforce access control.</p>
+      <div className="mb-6 flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Admin Control Panel</h1>
+          <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1">Manage users, monitor sessions, and enforce access control.</p>
+        </div>
       </div>
+
+      {myTools.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-[#64748B] dark:text-slate-400 mb-3">
+            My Workspace Tools
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {myTools.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <Link
+                  key={tool.key}
+                  to={tool.path}
+                  className="group relative flex items-center gap-4 rounded-xl border border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900/80 p-4 transition-all hover:shadow-md hover:border-[#185FA5]/50 dark:hover:border-[#185FA5]/50"
+                >
+                  <div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: tool.tagBg, color: tool.tagColor }}
+                  >
+                    <Icon size={20} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-[#0F172A] dark:text-slate-100">
+                      {tool.title}
+                    </h3>
+                    <p className="truncate text-xs text-[#64748B] dark:text-slate-400">
+                      {tool.subtitle}
+                    </p>
+                  </div>
+                  <ArrowRight size={16} className="text-[#94A3B8] opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0 group-hover:text-[#185FA5]" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg p-5 flex items-center gap-4">
@@ -271,45 +314,39 @@ export function AdminPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 min-w-[280px]">
-                        {u.role === 'admin' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#6B3FA01A] text-[#6B3FA0]">
-                            <KeyRound size={12} /> All tools
-                          </span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {tools.map(tool => {
-                              const checked = getDraftAccess(u).includes(tool.key);
-                              return (
-                                <button
-                                  key={tool.key}
-                                  type="button"
-                                  disabled={savingAccess === u.id}
-                                  onClick={() => handleToggleToolAccess(u, tool.key)}
-                                  title={tool.description}
-                                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-60 ${
-                                    checked
-                                      ? 'border-[#185FA5]/30 bg-[#185FA51A] text-[#185FA5]'
-                                      : 'border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 text-[#64748B] dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800'
-                                  }`}
-                                >
-                                  {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : <KeyRound size={11} />}
-                                  {tool.label}
-                                </button>
-                              );
-                            })}
-                            {hasToolChanges(u) && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {tools.map(tool => {
+                            const checked = getDraftAccess(u).includes(tool.key);
+                            return (
                               <button
+                                key={tool.key}
                                 type="button"
                                 disabled={savingAccess === u.id}
-                                onClick={() => handleSaveToolAccess(u)}
-                                className="inline-flex items-center gap-1 rounded-md bg-[#185FA5] px-2 py-1 text-xs font-semibold text-white hover:bg-[#124A82] disabled:opacity-60"
+                                onClick={() => handleToggleToolAccess(u, tool.key)}
+                                title={tool.description}
+                                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-60 ${
+                                  checked
+                                    ? 'border-[#185FA5]/30 bg-[#185FA51A] text-[#185FA5]'
+                                    : 'border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 text-[#64748B] dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800'
+                                }`}
                               >
-                                {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : null}
-                                Save tools
+                                {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : <KeyRound size={11} />}
+                                {tool.label}
                               </button>
-                            )}
-                          </div>
-                        )}
+                            );
+                          })}
+                          {hasToolChanges(u) && (
+                            <button
+                              type="button"
+                              disabled={savingAccess === u.id}
+                              onClick={() => handleSaveToolAccess(u)}
+                              className="inline-flex items-center gap-1 rounded-md bg-[#185FA5] px-2 py-1 text-xs font-semibold text-white hover:bg-[#124A82] disabled:opacity-60"
+                            >
+                              {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : null}
+                              Save tools
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-[#64748B] dark:text-slate-400">{formatDate(u.created_at)}</td>
                       <td className="px-4 py-3 text-sm text-[#334155] dark:text-slate-300 font-medium">{formatLastActive(u.last_active_at)}</td>

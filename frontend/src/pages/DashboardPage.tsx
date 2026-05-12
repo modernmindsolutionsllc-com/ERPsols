@@ -6,7 +6,7 @@ import {
   Database, ShieldCheck, TrendingUp, Receipt,
 } from 'lucide-react';
 
-const tools = [
+export const DASHBOARD_TOOLS = [
   {
     key: 'config_snapshot' as ToolKey,
     path: '/config',
@@ -88,7 +88,7 @@ const tools = [
 export function DashboardPage() {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] ?? 'there';
-  const visibleTools = tools.filter(tool =>
+  const visibleTools = DASHBOARD_TOOLS.filter(tool =>
     user?.role !== 'admin' && user?.role !== 'Admin' && user?.tool_access?.includes(tool.key)
   );
 
