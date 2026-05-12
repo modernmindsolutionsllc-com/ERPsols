@@ -17,6 +17,25 @@ function mockError(code: string, message: string): ApiError {
   return { error: { code, message } };
 }
 
+/** FastAPI returns `detail` as a string, or a list of validation errors — normalize for UI messages. */
+function formatFastApiDetail(body: unknown): string {
+  if (!body || typeof body !== 'object') return 'Request failed.';
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: unknown) => {
+        if (item && typeof item === 'object' && 'msg' in item) {
+          return String((item as { msg: string }).msg);
+        }
+        return JSON.stringify(item);
+      })
+      .join('; ');
+  }
+  if (detail !== undefined && detail !== null) return String(detail);
+  return 'Request failed.';
+}
+
 async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T | ApiError> {
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -29,10 +48,7 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      return mockError(
-        `HTTP_${response.status}`,
-        typeof body.detail === 'string' ? body.detail : 'Request failed. Please try again.'
-      );
+      return mockError(`HTTP_${response.status}`, formatFastApiDetail(body));
     }
 
     return body as T;
@@ -648,7 +664,7 @@ async function authenticatedBlob(path: string, body: object): Promise<Blob | Api
       return {
         error: {
           code: `HTTP_${response.status}`,
-          message: typeof errBody.detail === 'string' ? errBody.detail : 'Execution failed.',
+          message: formatFastApiDetail(errBody),
         },
       };
     }

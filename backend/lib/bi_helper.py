@@ -104,6 +104,11 @@ def fetch_bi_session_token(soap_url, username, password, http_session=None):
     # Oracle BIP returns HTTP 500 for auth failures; the real reason is inside <faultstring>.
     if not resp.ok:
         fault_msg = None
+        body_lower = resp.text.lower()
+
+        if "planned outage" in body_lower:
+            raise RuntimeError("Oracle BI environment is currently in a planned outage.")
+
         try:
             root = ET.fromstring(resp.text)
             # Try with explicit namespace URI
@@ -535,6 +540,12 @@ def friendly_bi_error(err: Exception | str) -> str:
         or "name or service not known" in msg
     ):
         return "Cannot connect to Oracle BI server. Please check the server URL in your Oracle credentials."
+
+    # --------------------------------------------------
+    # 2b. Planned outage / temporary upstream downtime
+    # --------------------------------------------------
+    if "planned outage" in msg or "503" in msg or "service unavailable" in msg:
+        return "The Oracle BI environment is temporarily unavailable (HTTP 503 / planned outage). Please try again once the Oracle pod is back up."
 
     # --------------------------------------------------
     # 3. Account locked (Oracle locks after repeated failed logins)

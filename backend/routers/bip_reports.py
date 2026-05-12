@@ -7,7 +7,7 @@ Patched for multi-environment support: execution routes now filter
 credentials by BOTH user_id AND env_name.
 """
 
-from typing import List
+from typing import List, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -62,6 +62,19 @@ def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
 
     url = credential.oracle_url or "https://fa-etaj-saasfademo1.ds-fa.oraclepdemos.com/xmlpserver/services/ExternalReportWSSService"
     return credential.oracle_username, password, url
+
+
+def _effective_sql_text(cfg: BipReportConfig) -> str | None:
+    """Prefer plain-text sql_query; otherwise try Fernet-encrypted_sql_query."""
+    if cfg.sql_query and str(cfg.sql_query).strip():
+        return str(cfg.sql_query).strip()
+    if cfg.encrypted_sql_query:
+        try:
+            plain = decrypt_password(cfg.encrypted_sql_query).strip()
+            return plain or None
+        except Exception:
+            return None
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -134,16 +147,24 @@ def execute_reports(
     if not configs:
         raise HTTPException(status_code=404, detail="Requested reports not found.")
 
-    sql_items = []
+    sql_items: List[Tuple[str, str, str]] = []
+    missing_sql: list[str] = []
     for cfg in configs:
-        if not cfg.sql_query:
+        sql_text = _effective_sql_text(cfg)
+        if not sql_text:
+            missing_sql.append(cfg.report_name)
             continue
-        sql_items.append((cfg.module, cfg.report_name, cfg.sql_query))
+        sql_items.append((cfg.module, cfg.report_name, sql_text))
 
     if not sql_items:
+        names = ", ".join(missing_sql) if missing_sql else "(unknown)"
         raise HTTPException(
             status_code=400,
-            detail="None of the selected reports contain executable plain-text SQL queries.",
+            detail=(
+                "None of the selected reports contain executable SQL. "
+                f"Reports missing usable SQL: {names}. "
+                "Open Save SQL Report and ensure the query is saved, or reconnect Oracle if credentials fail to decrypt."
+            ),
         )
 
     # 3. Execute ETL

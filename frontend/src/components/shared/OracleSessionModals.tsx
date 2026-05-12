@@ -113,8 +113,12 @@ export function EnvSetupModal({ open, onOpenChange, onSuccess }: EnvSetupModalPr
               <Globe size={20} className="text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Environment Setup</h2>
-              <p className="text-white/60 text-xs">Configure Oracle Fusion connection</p>
+              <DialogTitle className="text-lg font-bold text-white p-0 shadow-none border-0">
+                Environment Setup
+              </DialogTitle>
+              <DialogDescription className="text-white/60 text-xs mt-0">
+                Configure Oracle Fusion connection
+              </DialogDescription>
             </div>
           </div>
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-500/15 border border-emerald-400/20 text-emerald-200 text-[11px] font-medium">
