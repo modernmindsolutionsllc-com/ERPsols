@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   BarChart3, Database, Download, FileSpreadsheet, Loader2, PlayCircle,
   Server, Globe, Pencil, UserPlus, Users, Trash2, Key, ChevronDown,
-  Zap, Layers, FileText, Info, PlusCircle, Check, ChevronsUpDown,
+  Zap, Layers, Info, Check, ChevronsUpDown,
 } from 'lucide-react';
 
 import { useAuth } from '@/context/AuthContext';
@@ -13,7 +13,7 @@ import { usePermission, useToolAccess } from '@/hooks/usePermission';
 import {
   bipReportingApi, type OracleStatus, type OracleSessionResponse, type BipReportResponse,
 } from '@/services/api';
-import { CreateBipReportModal } from '@/components/CreateBipReportModal';
+
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub,
@@ -34,11 +34,11 @@ const DUMMY_MODULES = ['Financials', 'HCM', 'SCM', 'Procurement', 'CRM', 'Projec
 const DUMMY_REPORTS: BipReportResponse[] = Array.from({ length: 85 }).map((_, i) => {
   const module = DUMMY_MODULES[i % DUMMY_MODULES.length];
   return {
-    id: `dummy-${i}`,
+    id: -(i + 1),
     report_name: `${module} Process Extract ${i + 1}`,
     module: module,
     description: `Sample dummy report ${i + 1} intended for testing ${module} datasets.`,
-    sql_query: `SELECT * FROM ${module}_TEST_TABLE_${i+1}`,
+    is_active: true,
     created_at: new Date().toISOString()
   };
 });
@@ -70,12 +70,10 @@ export function BIPReportingPage() {
   const [isEditCredsOpen, setIsEditCredsOpen] = useState(false);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
-  const [isCreateReportOpen, setIsCreateReportOpen] = useState(false);
 
   // Report state
   const [reports, setReports] = useState<BipReportResponse[]>([]);
   const [selectedReport, setSelectedReport] = useState<BipReportResponse | null>(null);
-  const [reportsLoading, setReportsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [hasResults, setHasResults] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
@@ -99,7 +97,6 @@ export function BIPReportingPage() {
   }, [activeEnv]);
 
   const fetchReports = useCallback(async () => {
-    setReportsLoading(true);
     const res = await bipReportingApi.getBipReports();
     if (isApiError(res)) {
       toast.error(res.error.message || 'Failed to load reports.');
@@ -107,7 +104,6 @@ export function BIPReportingPage() {
     } else {
       setReports([...res, ...DUMMY_REPORTS]);
     }
-    setReportsLoading(false);
   }, []);
 
   useEffect(() => { void fetchOracleStatus(); void fetchSessions(); void fetchReports(); }, []);
@@ -162,7 +158,7 @@ export function BIPReportingPage() {
     toast.info('Executing report in Oracle BIP...', { id: 'run-report' });
     
     try {
-      if (selectedReport.id.startsWith('dummy-')) {
+      if (selectedReport.id < 0) {
         // Mock Execution for dummy data
         await new Promise(res => setTimeout(res, 1500));
         
@@ -232,15 +228,6 @@ export function BIPReportingPage() {
             <p className="text-gray-500 dark:text-slate-400 mt-2">Select a report from the dropdown, execute against Oracle BIP, and review the data.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="outline"
-              size="lg"
-              className="gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-              onClick={() => setIsCreateReportOpen(true)}
-            >
-              <PlusCircle className="h-5 w-5" />
-              Save SQL Report
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant={oracleConnected ? 'outline' : 'default'} className={oracleConnected ? 'gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' : 'gap-2 bg-[#185FA5] text-white'} size="lg">
@@ -331,7 +318,17 @@ export function BIPReportingPage() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[400px] p-0 shadow-xl dark:bg-[#0C1425] dark:border-white/10" align="start">
+                  <PopoverContent 
+                    className="p-0 shadow-2xl border border-gray-200 dark:border-white/10 dark:bg-[#0C1425] z-50 overflow-hidden 
+                               data-[state=open]:animate-in data-[state=closed]:animate-out 
+                               data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
+                               data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
+                               data-[side=bottom]:slide-in-from-top-2"
+                    style={{ width: 'var(--radix-popover-trigger-width)' }}
+                    align="start"
+                    side="bottom"
+                    sideOffset={8}
+                  >
                     <Command className="dark:bg-[#0C1425]">
                       <CommandInput placeholder="Search reports (e.g. HCM, Invoice)..." className="h-11" />
                       <CommandList className="max-h-[300px] overflow-y-auto">
@@ -504,11 +501,6 @@ export function BIPReportingPage() {
       />
       <AddAccountModal open={isAddAccountOpen} onOpenChange={setIsAddAccountOpen} onSuccess={handleSessionRefresh} />
       <DeleteAllUsersModal open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen} onConfirm={handleDeleteAll} />
-      <CreateBipReportModal
-        open={isCreateReportOpen}
-        onOpenChange={setIsCreateReportOpen}
-        onSuccess={() => { void fetchReports(); }}
-      />
     </>
   );
 }

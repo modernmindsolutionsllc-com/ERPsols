@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db, OracleCredential
 from dependencies import require_user
+from lib.bi_helper import fetch_bi_session_token, get_bip_PublicReportService_url
 from Schemas import (
     OracleConnectRequest,
     OracleConnectResponse,
@@ -160,9 +161,35 @@ def upsert_oracle_session(
 
     If env_name already exists for this user, the existing record is
     updated (upsert). Password is encrypted via Fernet BEFORE db write.
+
+    GATEKEEPER: A live SOAP login is attempted first. If Oracle rejects
+    the credentials, no data is persisted.
     """
     user_id = int(current_user["sub"])
     normalized_url = normalize_oracle_url(body.oracle_url)
+
+    # ── Pre-flight: verify credentials against Oracle SOAP endpoint ───
+    soap_url = get_bip_PublicReportService_url(body.oracle_url)
+    try:
+        fetch_bi_session_token(
+            soap_url,
+            body.oracle_username,
+            body.oracle_password,
+            timeout=10,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Oracle Authentication Failed: {exc}",
+        )
+    except Exception as exc:
+        logger.warning("Oracle pre-flight failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Oracle Authentication Failed: Could not reach the Oracle server. Please verify the URL and try again.",
+        )
+
+    # ── Credentials verified — safe to persist ────────────────────────
     encrypted_pw = encrypt_password(body.oracle_password)
     now = datetime.now(timezone.utc)
 
@@ -260,9 +287,35 @@ def connect_oracle(
     """
     Legacy single-connect endpoint. Now delegates to the multi-env upsert
     logic internally so data stays consistent.
+
+    GATEKEEPER: A live SOAP login is attempted first. If Oracle rejects
+    the credentials, no data is persisted.
     """
     user_id = int(current_user["sub"])
     normalized_url = normalize_oracle_url(body.oracle_url)
+
+    # ── Pre-flight: verify credentials against Oracle SOAP endpoint ───
+    soap_url = get_bip_PublicReportService_url(body.oracle_url)
+    try:
+        fetch_bi_session_token(
+            soap_url,
+            body.oracle_username,
+            body.oracle_password,
+            timeout=10,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Oracle Authentication Failed: {exc}",
+        )
+    except Exception as exc:
+        logger.warning("Oracle pre-flight failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Oracle Authentication Failed: Could not reach the Oracle server. Please verify the URL and try again.",
+        )
+
+    # ── Credentials verified — safe to persist ────────────────────────
     encrypted_pw = encrypt_password(body.oracle_password)
     now = datetime.now(timezone.utc)
 
@@ -296,7 +349,7 @@ def connect_oracle(
     db.commit()
 
     return OracleConnectResponse(
-        message="Oracle credentials encrypted and saved successfully.",
+        message="Oracle credentials verified, encrypted, and saved successfully.",
         oracle_url=normalized_url,
         env_name=body.env_name,
         oracle_username=body.oracle_username,

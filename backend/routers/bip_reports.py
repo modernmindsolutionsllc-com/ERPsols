@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from database import get_db, BipReportConfig, OracleCredential
 from dependencies import require_tool_access
 from Schemas import BipReportCreate, BipReportResponse, DirectBipSqlRequest, ExecuteReportsRequest
-from routers.integrations import decrypt_password
+from routers.integrations import encrypt_password, decrypt_password
 from lib.config_generate import run_sqls_config_generation
 
 router = APIRouter(
@@ -98,12 +98,15 @@ def create_bip_report(
     db: Session = Depends(get_db)
 ):
     """Create a new BIP Report configuration."""
+    encrypted_sql = encrypt_password(report_in.sql_query) if report_in.sql_query else None
+    
     new_report = BipReportConfig(
         module=report_in.module,
         sub_module=report_in.sub_module,
         report_name=report_in.report_name,
         description=report_in.description,
-        sql_query=report_in.sql_query,
+        encrypted_sql_query=encrypted_sql,
+        sql_query="",
     )
     db.add(new_report)
     try:

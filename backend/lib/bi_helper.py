@@ -74,9 +74,10 @@ def send_soap_request(soap_url, soap_body, http_session=None):
 # ---------------------------------------------------------------------
 from xml.sax.saxutils import escape
 
-def fetch_bi_session_token(soap_url, username, password, http_session=None):
+def fetch_bi_session_token(soap_url, username, password, http_session=None, timeout=None):
     safe_username = escape(username)
     safe_password = escape(password)
+    effective_timeout = timeout if timeout is not None else BI_DEFAULT_TIMEOUT
     
     soap_body = f"""
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService">
@@ -96,9 +97,9 @@ def fetch_bi_session_token(soap_url, username, password, http_session=None):
     }
 
     if http_session:
-        resp = http_session.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
+        resp = http_session.post(soap_url, data=soap_body, headers=headers, timeout=effective_timeout)
     else:
-        resp = requests.post(soap_url, data=soap_body, headers=headers, timeout=BI_DEFAULT_TIMEOUT)
+        resp = requests.post(soap_url, data=soap_body, headers=headers, timeout=effective_timeout)
 
     # Parse SOAP Fault *before* raise_for_status so we can surface the real Oracle error message.
     # Oracle BIP returns HTTP 500 for auth failures; the real reason is inside <faultstring>.

@@ -1,14 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { adminApi } from '@/services/api';
+import { adminApi, bipReportingApi, type BipReportResponse } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { formatActiveTime, formatLastActive } from '@/utils/formatters';
 import { toast } from 'sonner';
 import type { ACPUser, AdminTool, ApiError, ToolKey } from '@/types';
 import {
   Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw,
-  KeyRound, Trash2, ArrowRight,
+  KeyRound, Trash2, ArrowRight, PlusCircle, FileSpreadsheet,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { CreateBipReportModal } from '@/components/CreateBipReportModal';
 import { DASHBOARD_TOOLS } from '@/pages/DashboardPage';
 
 function formatDate(iso: string): string {
@@ -41,6 +51,9 @@ export function AdminPage() {
   const [savingAccess, setSavingAccess] = useState<number | null>(null);
   const [draftToolAccess, setDraftToolAccess] = useState<Record<number, ToolKey[]>>({});
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [isCreateReportOpen, setIsCreateReportOpen] = useState(false);
+  const [reports, setReports] = useState<BipReportResponse[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
   const { user: currentUser } = useAuth();
 
   const loadUsers = useCallback(async () => {
@@ -59,9 +72,22 @@ export function AdminPage() {
     setLoading(false);
   }, [roleFilter, search]);
 
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    const res = await bipReportingApi.getBipReports();
+    if (isApiError(res)) {
+      toast.error('Failed to load reports: ' + res.error.message);
+      setReports([]);
+    } else {
+      setReports(res);
+    }
+    setReportsLoading(false);
+  }, []);
+
   useEffect(() => {
     void loadUsers();
-  }, [loadUsers]);
+    void loadReports();
+  }, [loadUsers, loadReports]);
 
   useEffect(() => {
     async function loadTools() {
@@ -154,10 +180,21 @@ export function AdminPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
-      <div className="mb-6 flex items-end justify-between">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-[#0F172A] dark:text-slate-100 tracking-tight">Admin Control Panel</h1>
           <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1">Manage users, monitor sessions, and enforce access control.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="lg"
+            className="gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+            onClick={() => setIsCreateReportOpen(true)}
+          >
+            <PlusCircle className="h-5 w-5" />
+            Save SQL Report
+          </Button>
         </div>
       </div>
 
@@ -408,6 +445,66 @@ export function AdminPage() {
           </div>
         )}
       </div>
+
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-[#0F172A] dark:text-slate-100 mb-4 flex items-center gap-2">
+          <FileSpreadsheet className="text-[#185FA5]" size={20} />
+          Configured Oracle Reports
+        </h2>
+        
+        <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden shadow-sm">
+          {reportsLoading ? (
+            <div className="p-8 text-center text-[#64748B] dark:text-slate-400 flex flex-col items-center">
+              <Loader2 className="animate-spin mb-2" size={24} />
+              <p>Loading reports...</p>
+            </div>
+          ) : reports.length === 0 ? (
+            <div className="p-8 text-center text-[#64748B] dark:text-slate-400">
+              <FileSpreadsheet className="mx-auto mb-3 opacity-20" size={48} />
+              <p>No reports configured yet.</p>
+              <Button 
+                variant="link" 
+                onClick={() => setIsCreateReportOpen(true)}
+                className="mt-2 text-[#185FA5] p-0 h-auto"
+              >
+                Create your first report
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-[#F8FAFC] dark:bg-slate-800/50 hover:bg-[#F8FAFC] dark:hover:bg-slate-800/50">
+                  <TableHead className="w-[150px] font-semibold text-[#0F172A] dark:text-slate-300">Module</TableHead>
+                  <TableHead className="font-semibold text-[#0F172A] dark:text-slate-300">Report Name</TableHead>
+                  <TableHead className="font-semibold text-[#0F172A] dark:text-slate-300">Description</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reports.map((report) => (
+                  <TableRow key={report.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-800/30 border-[#E2E8F0] dark:border-white/10">
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#185FA51A] text-[#185FA5]">
+                        {report.module}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-[#334155] dark:text-slate-300 font-medium">{report.report_name}</TableCell>
+                    <TableCell className="text-[#64748B] dark:text-slate-400 text-sm">{report.description || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </div>
+
+      <CreateBipReportModal
+        open={isCreateReportOpen}
+        onOpenChange={setIsCreateReportOpen}
+        onSuccess={() => { 
+          toast.success('Report config saved successfully');
+          void loadReports();
+        }}
+      />
     </div>
   );
 }
