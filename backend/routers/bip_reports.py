@@ -7,6 +7,7 @@ Patched for multi-environment support: execution routes now filter
 credentials by BOTH user_id AND env_name.
 """
 
+import os
 from typing import List, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -15,7 +16,14 @@ from fastapi.responses import StreamingResponse
 
 from database import get_db, BipReportConfig, OracleCredential
 from dependencies import require_tool_access
-from Schemas import BipReportCreate, BipReportResponse, DirectBipSqlRequest, ExecuteReportsRequest
+from Schemas import (
+    BipReportCreate,
+    BipReportResponse,
+    DirectBipSqlRequest,
+    ExecutePresetQueryRequest,
+    ExecuteReportsRequest,
+    PresetBipQueryResponse,
+)
 from routers.integrations import encrypt_password, decrypt_password
 from lib.config_generate import run_sqls_config_generation
 
@@ -26,6 +34,82 @@ router = APIRouter(
 
 import logging
 _logger = logging.getLogger(__name__)
+
+DUAL_QUERY_SQL = (
+    "SELECT USER AS ORACLE_USER, "
+    "TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') AS CURRENT_TIMESTAMP "
+    "FROM DUAL"
+)
+
+
+def _preset_query_catalog() -> list[dict[str, str]]:
+    raw_targets = [
+        {
+            "id": "mary-david-dual",
+            "target_label": "Mary.David Demo",
+            "target_url": os.getenv("BIP_PRESET_TARGET_1_URL", "").strip(),
+            "target_username": os.getenv("BIP_PRESET_TARGET_1_USERNAME", "").strip(),
+            "target_password": os.getenv("BIP_PRESET_TARGET_1_PASSWORD", "").strip(),
+        },
+        {
+            "id": "paul-anthony-dual",
+            "target_label": "Paul.Anthony Demo",
+            "target_url": os.getenv("BIP_PRESET_TARGET_2_URL", "").strip(),
+            "target_username": os.getenv("BIP_PRESET_TARGET_2_USERNAME", "").strip(),
+            "target_password": os.getenv("BIP_PRESET_TARGET_2_PASSWORD", "").strip(),
+        },
+        {
+            "id": "nyssa-kestrel-dual",
+            "target_label": "Nyssa.Kestrel Demo",
+            "target_url": os.getenv("BIP_PRESET_TARGET_3_URL", "").strip(),
+            "target_username": os.getenv("BIP_PRESET_TARGET_3_USERNAME", "").strip(),
+            "target_password": os.getenv("BIP_PRESET_TARGET_3_PASSWORD", "").strip(),
+        },
+    ]
+
+    presets: list[dict[str, str]] = []
+    for target in raw_targets:
+        if not target["target_url"] or not target["target_username"] or not target["target_password"]:
+            continue
+
+        presets.append(
+            {
+                **target,
+                "module": target["target_label"],
+                "report_name": f"{target['target_username']} DUAL Query",
+                "description": (
+                    f"Runs a lightweight Oracle DUAL query against {target['target_label']} "
+                    "and returns live database values."
+                ),
+                "sql_query": DUAL_QUERY_SQL,
+            }
+        )
+
+    return presets
+
+
+def _public_preset_query(preset: dict[str, str]) -> PresetBipQueryResponse:
+    return PresetBipQueryResponse(
+        id=preset["id"],
+        module=preset["module"],
+        report_name=preset["report_name"],
+        description=preset["description"],
+        sql_query=preset["sql_query"],
+        target_label=preset["target_label"],
+        target_url=preset["target_url"],
+        target_username=preset["target_username"],
+    )
+
+
+def _resolve_preset_query_or_404(preset_id: str) -> dict[str, str]:
+    for preset in _preset_query_catalog():
+        if preset["id"] == preset_id:
+            return preset
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="The selected Oracle DUAL query preset is not available.",
+    )
 
 
 # ── Helper: Resolve credentials for a specific environment ────────────────────
@@ -130,6 +214,14 @@ def list_bip_reports(
     return db.query(BipReportConfig).all()
 
 
+@router.get("/preset-queries", response_model=List[PresetBipQueryResponse])
+def list_preset_queries(
+    current_user: dict = Depends(require_tool_access("bip_reporting")),
+):
+    """List fixed Oracle DUAL query presets without reading from the app database."""
+    return [_public_preset_query(preset) for preset in _preset_query_catalog()]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  EXECUTION PIPELINE (patched for multi-env)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -195,6 +287,43 @@ def execute_reports(
 
     excel_buffer.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="Oracle_Config_Extract.xlsx"'}
+    return StreamingResponse(
+        excel_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@router.post("/execute-preset")
+def execute_preset_query(
+    body: ExecutePresetQueryRequest,
+    current_user: dict = Depends(require_tool_access("bip_reporting")),
+):
+    """
+    Execute a predefined Oracle DUAL query using fixed credentials from environment variables.
+    This flow bypasses saved BIP report configs entirely.
+    """
+    preset = _resolve_preset_query_or_404(body.preset_id)
+
+    excel_buffer, errors = run_sqls_config_generation(
+        username=preset["target_username"],
+        password=preset["target_password"],
+        url=preset["target_url"],
+        sql_items=[(preset["module"], preset["report_name"], preset["sql_query"])],
+    )
+
+    if excel_buffer.getbuffer().nbytes == 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Preset query failed to generate. Errors: {', '.join(errors)}",
+        )
+
+    safe_name = "".join(
+        ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in preset["report_name"]
+    ).strip("_")
+
+    excel_buffer.seek(0)
+    headers = {"Content-Disposition": f'attachment; filename="{safe_name or "Oracle_DUAL_Query"}.xlsx"'}
     return StreamingResponse(
         excel_buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

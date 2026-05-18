@@ -587,6 +587,17 @@ export interface BipReportResponse {
   created_at: string;
 }
 
+export interface PresetBipQueryResponse {
+  id: string;
+  module: string;
+  report_name: string;
+  description?: string | null;
+  sql_query: string;
+  target_label: string;
+  target_url: string;
+  target_username: string;
+}
+
 export interface DirectBipSqlRequest {
   module: string;
   report_name: string;
@@ -688,11 +699,17 @@ export const bipReportingApi = {
       body: JSON.stringify(data),
     }),
   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
+  getPresetQueries: () => authenticatedJson<PresetBipQueryResponse[]>('/api/v1/bip-reports/preset-queries'),
 
   executeBipReports: (reportIds: number[], envName: string) =>
     authenticatedBlob('/api/v1/bip-reports/execute', {
       report_ids: reportIds,
       env_name: envName,
+    }),
+
+  executePresetQuery: (presetId: string) =>
+    authenticatedBlob('/api/v1/bip-reports/execute-preset', {
+      preset_id: presetId,
     }),
 
   executeSql: (data: DirectBipSqlRequest) =>

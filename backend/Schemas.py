@@ -301,6 +301,28 @@ class ExecuteReportsRequest(BaseModel):
     env_name: str = "Demo Oracle Fusion"
 
 
+class PresetBipQueryResponse(BaseModel):
+    id: str
+    module: str
+    report_name: str
+    description: Optional[str] = None
+    sql_query: str
+    target_label: str
+    target_url: str
+    target_username: str
+
+
+class ExecutePresetQueryRequest(BaseModel):
+    preset_id: str
+
+    @field_validator("preset_id")
+    @classmethod
+    def preset_id_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Preset id cannot be empty.")
+        return v.strip()
+
+
 class DirectBipSqlRequest(BaseModel):
     module: str = "Ad Hoc"
     report_name: str = "Ad Hoc SQL"
