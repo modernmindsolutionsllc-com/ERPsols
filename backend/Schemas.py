@@ -75,6 +75,10 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class OTPRequestResponse(MessageResponse):
+    dev_otp: Optional[str] = None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  CONFIG SNAPSHOT SCHEMAS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -313,3 +317,24 @@ class DirectBipSqlRequest(BaseModel):
         if not v.strip():
             raise ValueError("This field cannot be empty.")
         return v.strip()
+
+
+class OracleCatalogImportRequest(BaseModel):
+    """Import SQL queries from Oracle BI Publisher data models."""
+    env_name: str = "Demo Oracle Fusion"
+    source_folder: Optional[str] = None
+
+    @field_validator("env_name")
+    @classmethod
+    def env_name_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Oracle environment cannot be empty.")
+        return v.strip()
+
+
+class OracleCatalogImportResponse(BaseModel):
+    imported_count: int
+    updated_count: int
+    created_count: int
+    logs: list[str]
+    reports: list[BipReportResponse]

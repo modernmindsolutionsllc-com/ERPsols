@@ -30,7 +30,16 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # ── Shared DB path ─────────────────────────────────────────────────────────────
 
-DB_PATH = os.getenv("DB_PATH", "app.db")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_db_path(raw_path: str) -> str:
+    if os.path.isabs(raw_path):
+        return raw_path
+    return os.path.join(BACKEND_DIR, raw_path)
+
+
+DB_PATH = _resolve_db_path(os.getenv("DB_PATH", "app.db"))
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 

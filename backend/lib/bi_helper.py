@@ -6,14 +6,37 @@ from requests import Session as RequestsSession
 from requests.auth import HTTPBasicAuth
 import sqlite3
 import base64
+import io
+import os
+import re
+import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 import textwrap
 from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.sax.saxutils import escape
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-# from lib.resources import db_path
-db_path = "app.db"
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ORACLE_VALIDATE_DATA_MODEL_FOLDER = os.getenv(
+    "ORACLE_VALIDATE_DATA_MODEL_FOLDER",
+    "/My Folders/Validate Catalog/Data Model",
+)
+LEGACY_CATALOG_ROOTS = (
+    "/Custom/iDeploy",
+    "/users/mary.david/QuickConfigTool",
+    "/users/caleb.gavin/QuickConfigTool",
+)
+
+
+def _resolve_db_path(raw_path: str) -> str:
+    if os.path.isabs(raw_path):
+        return raw_path
+    return os.path.join(BACKEND_DIR, raw_path)
+
+
+db_path = _resolve_db_path(os.getenv("DB_PATH", "app.db"))
 
 BI_DEFAULT_TIMEOUT = 30
 
@@ -52,6 +75,13 @@ def get_bip_ExternalReportWSSService_url(url: str) -> str:
     normalized = normalize_url(url)
     return f"{normalized}/xmlpserver/services/ExternalReportWSSService"
 
+def get_bip_CatalogService_urls(url: str) -> list[str]:
+    normalized = normalize_url(url)
+    return [
+        f"{normalized}/xmlpserver/services/CatalogService",
+        f"{normalized}/xmlpserver/services/v2/CatalogService",
+    ]
+
 # ---------------------------------------------------------------------
 # Generic SOAP sender
 # ---------------------------------------------------------------------
@@ -70,10 +100,215 @@ def send_soap_request(soap_url, soap_body, http_session=None, timeout=None):
     except requests.exceptions.RequestException as e:
         return str(e)
 
-# ---------------------------------------------------------------------
-# BI Login / BI Logout
-# ---------------------------------------------------------------------
-from xml.sax.saxutils import escape
+
+def extract_soap_fault(xml_text: str) -> str | None:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+
+    for tag in (
+        ".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring",
+        ".//faultstring",
+    ):
+        fault_el = root.find(tag)
+        if fault_el is not None and fault_el.text:
+            return fault_el.text.strip()
+
+    return None
+
+
+def describe_soap_failure(resp) -> str:
+    if isinstance(resp, str):
+        return resp
+
+    status_code = getattr(resp, "status_code", "unknown")
+    body = getattr(resp, "text", "") or ""
+    fault = extract_soap_fault(body)
+    if fault:
+        return f"HTTP {status_code}: {fault}"
+    if body:
+        return f"HTTP {status_code}: {body[:500]}"
+    return f"HTTP {status_code}"
+
+
+def normalize_catalog_payload(b64data: str) -> str:
+    """
+    Oracle expects objectZippedData to decode directly to a ZIP payload.
+    Older local seeds stored zlib-compressed ZIP bytes, so unwrap them here
+    to keep existing SQLite rows deployable.
+    """
+    raw = base64.b64decode(b64data)
+    if raw.startswith(b"PK"):
+        return b64data
+
+    try:
+        unwrapped = zlib.decompress(raw)
+    except zlib.error:
+        return b64data
+
+    if unwrapped.startswith(b"PK"):
+        return base64.b64encode(unwrapped).decode("ascii")
+    return b64data
+
+
+def _validate_catalog_target_paths(oracle_user: str) -> tuple[str, str]:
+    target_data_model_folder = _oracle_user_folder_path(oracle_user, ORACLE_VALIDATE_DATA_MODEL_FOLDER)
+    target_root_folder = target_data_model_folder.rsplit("/", 1)[0]
+    return target_root_folder.rstrip("/"), target_data_model_folder.rstrip("/")
+
+
+def get_validate_catalog_target_root(oracle_user: str) -> str:
+    target_root_folder, _ = _validate_catalog_target_paths(oracle_user)
+    return target_root_folder
+
+
+def get_dynamic_sql_report_path(oracle_user: str) -> str:
+    return f"{get_validate_catalog_target_root(oracle_user)}/Dynamic SQL Executor CSV Report.xdo"
+
+
+def _find_missing_template_aliases(files: dict[str, bytes]) -> dict[str, bytes]:
+    report_bytes = files.get("_report.xdo")
+    if not report_bytes:
+        return {}
+
+    try:
+        report_xml = report_bytes.decode("utf-8")
+        root = ET.fromstring(report_xml)
+    except Exception:
+        return {}
+
+    aliases: dict[str, bytes] = {}
+    namespace = {"x": "http://xmlns.oracle.com/oxp/xmlp"}
+    for template in root.findall(".//x:template", namespace):
+        template_url = template.attrib.get("url", "").strip()
+        locale = template.attrib.get("locale", "").strip()
+        if not template_url or template_url in files:
+            continue
+
+        stem, dot, ext = template_url.rpartition(".")
+        if not dot:
+            continue
+
+        candidate_names = []
+        if locale:
+            candidate_names.append(f"{stem}_{locale}.{ext}")
+            if "_" in locale:
+                candidate_names.append(f"{stem}_{locale.split('_', 1)[0]}.{ext}")
+
+        for candidate in candidate_names:
+            if candidate in files:
+                aliases[template_url] = files[candidate]
+                break
+
+    return aliases
+
+
+def _repair_truncated_xml_file(filename: str, data: bytes) -> tuple[bytes, bool]:
+    if not filename.lower().endswith((".xdm", ".xml")):
+        return data, False
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data, False
+
+    try:
+        ET.fromstring(text)
+        return data, False
+    except ET.ParseError:
+        pass
+
+    root_match = re.search(r"<([A-Za-z_][\w:.-]*)(?:\s|>)", text)
+    if not root_match:
+        return data, False
+
+    root_name = root_match.group(1).split(":", 1)[-1]
+    expected_close = f"</{root_name}>"
+    stripped = text.rstrip()
+
+    if stripped.endswith(expected_close):
+        return data, False
+
+    partial_close = re.search(r"</[A-Za-z_][\w:.-]*$", stripped)
+    if not partial_close:
+        return data, False
+
+    repaired = stripped[: partial_close.start()] + expected_close
+    try:
+        ET.fromstring(repaired)
+    except ET.ParseError:
+        return data, False
+
+    trailing = text[len(stripped):]
+    return (repaired + trailing).encode("utf-8"), True
+
+
+def prepare_catalog_payload(
+    b64data: str,
+    oracle_user: str,
+    target_root_folder: str,
+    target_data_model_folder: str,
+) -> str:
+    normalized = normalize_catalog_payload(b64data)
+    raw = base64.b64decode(normalized)
+    if not raw.startswith(b"PK"):
+        return normalized
+
+    changed = False
+    output = io.BytesIO()
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as source_zip:
+            transformed_files: dict[str, bytes] = {}
+            source_infos = list(source_zip.infolist())
+            for info in source_infos:
+                data = source_zip.read(info.filename)
+                if info.filename.lower().endswith((".xdo", ".xdm", ".cfg", ".xml")):
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = ""
+
+                    if text:
+                        next_text = text
+                        for legacy_root in LEGACY_CATALOG_ROOTS:
+                            next_text = next_text.replace(
+                                f"{legacy_root}/Data Models/",
+                                f"{target_data_model_folder}/",
+                            )
+                            next_text = next_text.replace(
+                                f"{legacy_root}/Data Model/",
+                                f"{target_data_model_folder}/",
+                            )
+                            next_text = next_text.replace(legacy_root, target_root_folder)
+                        if next_text != text:
+                            data = next_text.encode("utf-8")
+                            changed = True
+
+                transformed_files[info.filename] = data
+
+                repaired_data, repaired = _repair_truncated_xml_file(info.filename, transformed_files[info.filename])
+                if repaired:
+                    transformed_files[info.filename] = repaired_data
+                    changed = True
+
+            template_aliases = _find_missing_template_aliases(transformed_files)
+            if template_aliases:
+                changed = True
+                transformed_files.update(template_aliases)
+
+            with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target_zip:
+                for info in source_infos:
+                    target_zip.writestr(info.filename, transformed_files[info.filename])
+                for alias_name, alias_bytes in template_aliases.items():
+                    target_zip.writestr(alias_name, alias_bytes)
+    except zipfile.BadZipFile:
+        return normalized
+
+    if not changed:
+        return normalized
+    return base64.b64encode(output.getvalue()).decode("ascii")
 
 def fetch_bi_session_token(soap_url, username, password, http_session=None, timeout=None):
     safe_username = escape(username)
@@ -258,6 +493,349 @@ def parse_boolean_response(xml_text, tag_name):
     except Exception:
         return False
 
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _oracle_user_folder_path(username: str, relative_path: str) -> str:
+    cleaned = (relative_path or "").strip()
+    oracle_username = (username or "").strip()
+    if cleaned.startswith("/My Folders/"):
+        # Oracle's Catalog UI resolves "My Folders" under the /~user path.
+        # The /users/User.Name path can exist via SOAP but stay invisible in the UI.
+        cleaned = cleaned.replace("/My Folders", f"/~{oracle_username.lower()}", 1)
+    if cleaned.startswith(("/users/", "/~")):
+        return cleaned.rstrip("/")
+    return f"/users/{oracle_username}/{cleaned.strip('/')}".rstrip("/")
+
+
+def catalog_folder_contents_request(folder_path: str, session_token: str) -> str:
+    safe_folder = escape(folder_path)
+    safe_token = escape(session_token)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cat="http://xmlns.oracle.com/oxp/service/v2">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <cat:getFolderContentsInSession>
+         <cat:folderAbsolutePath>{safe_folder}</cat:folderAbsolutePath>
+         <cat:bipSessionToken>{safe_token}</cat:bipSessionToken>
+      </cat:getFolderContentsInSession>
+   </soapenv:Body>
+</soapenv:Envelope>
+"""
+
+
+def catalog_download_object_request(object_path: str, session_token: str) -> str:
+    safe_path = escape(object_path)
+    safe_token = escape(session_token)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cat="http://xmlns.oracle.com/oxp/service/v2">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <cat:downloadObjectInSession>
+         <cat:reportAbsolutePath>{safe_path}</cat:reportAbsolutePath>
+         <cat:bipSessionToken>{safe_token}</cat:bipSessionToken>
+      </cat:downloadObjectInSession>
+   </soapenv:Body>
+</soapenv:Envelope>
+"""
+
+
+def _send_catalog_request(url: str, soap_body: str, http_session=None, timeout=None):
+    last_resp = None
+    for soap_url in get_bip_CatalogService_urls(url):
+        resp = send_soap_request(soap_url, soap_body, http_session=http_session, timeout=timeout)
+        last_resp = resp
+        if not isinstance(resp, str) and getattr(resp, "ok", False):
+            return resp
+    return last_resp
+
+
+def _extract_xdm_paths_from_folder_response(xml_text: str, folder_path: str) -> list[str]:
+    root = ET.fromstring(xml_text)
+    paths: set[str] = set()
+
+    for el in root.iter():
+        text = (el.text or "").strip()
+        if text.startswith("/users/") and text.lower().endswith(".xdm"):
+            paths.add(text)
+
+        children = { _xml_local_name(child.tag).lower(): (child.text or "").strip() for child in list(el) }
+        absolute = (
+            children.get("absolutepath")
+            or children.get("absolute_path")
+            or children.get("path")
+            or children.get("objectabsolutepath")
+            or children.get("catalogpath")
+        )
+        if absolute and absolute.lower().endswith(".xdm"):
+            paths.add(absolute)
+            continue
+
+        obj_type = (children.get("type") or children.get("objecttype") or "").lower()
+        name = children.get("name") or children.get("displayname") or children.get("title")
+        if name and ("xdm" in obj_type or "datamodel" in obj_type or "data model" in obj_type):
+            clean_name = name if name.lower().endswith(".xdm") else f"{name}.xdm"
+            paths.add(f"{folder_path.rstrip('/')}/{clean_name}")
+
+    return sorted(paths)
+
+
+def _extract_base64_payload(xml_text: str) -> str:
+    root = ET.fromstring(xml_text)
+    candidates: list[str] = []
+    for el in root.iter():
+        text = re.sub(r"\s+", "", (el.text or ""))
+        if len(text) < 80:
+            continue
+        try:
+            base64.b64decode(text, validate=True)
+        except Exception:
+            continue
+        candidates.append(text)
+
+    if not candidates:
+        raise RuntimeError("Oracle CatalogService response did not include downloadable object data.")
+    return max(candidates, key=len)
+
+
+def _decode_xdm_payload(b64data: str) -> str:
+    raw = base64.b64decode(b64data)
+    if not raw.startswith(b"PK"):
+        try:
+            unwrapped = zlib.decompress(raw)
+            if unwrapped:
+                raw = unwrapped
+        except zlib.error:
+            pass
+
+    if raw.startswith(b"PK"):
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as zf:
+            names = zf.namelist()
+            preferred = [name for name in names if name.lower().endswith(".xdm")]
+            if not preferred:
+                preferred = [name for name in names if name.lower().endswith((".xml", ".xdo"))]
+            if not preferred:
+                raise RuntimeError("Downloaded data model package does not contain XML/XDM content.")
+            data = zf.read(preferred[0])
+    else:
+        data = raw
+
+    for encoding in ("utf-8-sig", "utf-8", "utf-16"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _clean_sql_text(sql_text: str) -> str:
+    cleaned = (sql_text or "").strip()
+    if cleaned.startswith("<![CDATA["):
+        cleaned = cleaned[len("<![CDATA["):]
+    if cleaned.endswith("]]>"):
+        cleaned = cleaned[:-len("]]>")]
+    return cleaned.strip()
+
+
+def _extract_sql_queries_from_text(xdm_xml: str, data_model_name: str) -> list[dict]:
+    found: list[dict] = []
+    seen_sql: set[str] = set()
+    for index, match in enumerate(re.finditer(r"<sql\b[^>]*>(.*?)</sql>", xdm_xml, flags=re.I | re.S), start=1):
+        sql_text = _clean_sql_text(match.group(1))
+        if not sql_text or sql_text in seen_sql:
+            continue
+        seen_sql.add(sql_text)
+        dataset_name = data_model_name if index == 1 else f"{data_model_name} Query {index}"
+        found.append({"dataset_name": dataset_name, "sql_query": sql_text})
+    return found
+
+
+def _extract_sql_queries_from_xdm(xdm_xml: str, data_model_name: str) -> list[dict]:
+    try:
+        root = ET.fromstring(xdm_xml)
+    except ET.ParseError:
+        return _extract_sql_queries_from_text(xdm_xml, data_model_name)
+
+    found: list[dict] = []
+    seen_sql: set[str] = set()
+
+    for data_set in root.iter():
+        if _xml_local_name(data_set.tag).lower() not in {"dataset", "dataSet".lower()}:
+            continue
+
+        ds_name = (
+            data_set.attrib.get("name")
+            or data_set.attrib.get("dataSetName")
+            or data_set.attrib.get("id")
+            or data_model_name
+        )
+        for child in data_set.iter():
+            if _xml_local_name(child.tag).lower() != "sql":
+                continue
+            sql_text = _clean_sql_text(child.text or "")
+            if not sql_text or sql_text in seen_sql:
+                continue
+            seen_sql.add(sql_text)
+            found.append({"dataset_name": ds_name, "sql_query": sql_text})
+
+    if found:
+        return found
+
+    for child in root.iter():
+        if _xml_local_name(child.tag).lower() != "sql":
+            continue
+        sql_text = _clean_sql_text(child.text or "")
+        if not sql_text or sql_text in seen_sql:
+            continue
+        seen_sql.add(sql_text)
+        found.append({"dataset_name": data_model_name, "sql_query": sql_text})
+
+    return found or _extract_sql_queries_from_text(xdm_xml, data_model_name)
+
+
+def _import_local_catalog_queries(username: str, append_log=None) -> list[dict]:
+    def log(message: str) -> None:
+        if append_log:
+            append_log(message)
+
+    oracle_user = username.strip()
+    _, target_data_model_folder = _validate_catalog_target_paths(oracle_user)
+    log(f"Falling back to local catalog seed: {db_path}")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT bi_object_abs_path, bi_object_base64_data "
+            "FROM bi_catalog_setup_data "
+            "WHERE lower(bi_object_type) = 'xdm' "
+            "ORDER BY rowid"
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    imported: list[dict] = []
+    for original_path, b64data in rows:
+        data_model_name = os.path.basename(original_path).removesuffix(".xdm")
+        source_path = f"{target_data_model_folder}/{os.path.basename(original_path)}"
+        try:
+            xdm_xml = _decode_xdm_payload(b64data)
+            queries = _extract_sql_queries_from_xdm(xdm_xml, data_model_name)
+        except Exception as exc:
+            log(f"Skipped local data model {data_model_name}: {type(exc).__name__}: {exc}")
+            continue
+
+        log(f"Extracted {len(queries)} SQL query/queryset(s) from local {data_model_name}")
+        for query in queries:
+            dataset_name = str(query["dataset_name"]).strip() or data_model_name
+            report_name = f"{data_model_name} - {dataset_name}"
+            imported.append({
+                "module": "Validate Catalog",
+                "sub_module": data_model_name,
+                "report_name": report_name,
+                "description": f"Imported from local catalog seed: {source_path}",
+                "sql_query": query["sql_query"],
+                "source_path": source_path,
+                "dataset_name": dataset_name,
+            })
+
+    return imported
+
+
+def import_oracle_catalog_queries(
+    username: str,
+    password: str,
+    url: str,
+    source_folder: str | None = None,
+    append_log=None,
+) -> list[dict]:
+    """
+    Import SQL datasets from Oracle BI Publisher .xdm data models into the app.
+    The router persists the returned rows under the logical "Validate Catalog" module.
+    """
+    def log(message: str) -> None:
+        if append_log:
+            append_log(message)
+
+    folder_path = _oracle_user_folder_path(
+        username,
+        source_folder or ORACLE_VALIDATE_DATA_MODEL_FOLDER,
+    )
+    session_token = None
+    http_session = None
+
+    try:
+        log(f"Reading Oracle data models from: {folder_path}")
+        session_token, http_session = bi_login(url, username, password)
+        log("BI login successful")
+
+        folder_resp = _send_catalog_request(
+            url,
+            catalog_folder_contents_request(folder_path, session_token),
+            http_session=http_session,
+            timeout=60,
+        )
+        if isinstance(folder_resp, str) or not getattr(folder_resp, "ok", False):
+            log(f"Unable to list Oracle catalog folder: {describe_soap_failure(folder_resp)}")
+            return _import_local_catalog_queries(username, append_log=append_log)
+
+        xdm_paths = _extract_xdm_paths_from_folder_response(folder_resp.text, folder_path)
+        log(f"Found {len(xdm_paths)} data model(s)")
+        if not xdm_paths:
+            return _import_local_catalog_queries(username, append_log=append_log)
+
+        imported: list[dict] = []
+        for xdm_path in xdm_paths:
+            data_model_name = os.path.basename(xdm_path).removesuffix(".xdm")
+            log(f"Downloading data model: {xdm_path}")
+            object_resp = _send_catalog_request(
+                url,
+                catalog_download_object_request(xdm_path, session_token),
+                http_session=http_session,
+                timeout=120,
+            )
+            if isinstance(object_resp, str) or not getattr(object_resp, "ok", False):
+                log(f"Skipped {xdm_path}: {describe_soap_failure(object_resp)}")
+                continue
+
+            try:
+                xdm_xml = _decode_xdm_payload(_extract_base64_payload(object_resp.text))
+                queries = _extract_sql_queries_from_xdm(xdm_xml, data_model_name)
+            except Exception as exc:
+                log(f"Skipped {xdm_path}: {type(exc).__name__}: {exc}")
+                continue
+
+            log(f"Extracted {len(queries)} SQL query/queryset(s) from {data_model_name}")
+            for query in queries:
+                dataset_name = str(query["dataset_name"]).strip() or data_model_name
+                report_name = f"{data_model_name} - {dataset_name}"
+                imported.append({
+                    "module": "Validate Catalog",
+                    "sub_module": data_model_name,
+                    "report_name": report_name,
+                    "description": f"Imported from Oracle Catalog: {xdm_path}",
+                    "sql_query": query["sql_query"],
+                    "source_path": xdm_path,
+                    "dataset_name": dataset_name,
+                })
+
+        if imported:
+            return imported
+
+        log("Oracle catalog download did not yield SQL. Using local catalog seed.")
+        return _import_local_catalog_queries(username, append_log=append_log)
+
+    finally:
+        if session_token:
+            try:
+                if bi_logout(url, session_token, http_session=http_session):
+                    log("BI logout successful")
+            except Exception as exc:
+                log(f"BI logout failed: {exc}")
+
 # ---------------------------------------------------------------------
 # Catalog validation (FIXED to use new URL helpers)
 # ---------------------------------------------------------------------
@@ -282,25 +860,41 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         soap_url = get_bip_PublicReportService_url(url)
 
-        # Oracle's internal user folders are ALWAYS lowercase
-        oracle_user = username.lower()
+        # Preserve Oracle username casing because catalog paths can be case-sensitive.
+        oracle_user = username.strip()
+        target_root_folder, target_data_model_folder = _validate_catalog_target_paths(oracle_user)
+        append_log(f"📁 Target root folder: {target_root_folder}")
+        append_log(f"📁 Target data model folder: {target_data_model_folder}")
 
-        # Make the folders dynamic to the currently logged-in user
-        user_base_path = f"/users/{oracle_user}/QuickConfigEngine"
-
-        # Load catalog objects and rewrite paths for the active user
+        # Load catalog objects and rewrite paths for the active user and target folder.
         cursor.execute(
             "SELECT BI_OBJECT_ABS_PATH, BI_OBJECT_TYPE, BI_OBJECT_BASE64_DATA "
             "FROM bi_catalog_setup_data ORDER BY rowid"
         )
         rows_full = cursor.fetchall()
+        if not rows_full:
+            append_log(f"No catalog setup rows found in SQLite table bi_catalog_setup_data ({db_path}).")
+            append_log("Run seed_catalog_to_db.py from the backend folder before deploying the catalog.")
+            return False
 
         dynamic_rows = []
         for original_path, obj_type, b64data in rows_full:
-            dynamic_path = original_path.replace("/users/mary.david", f"/users/{oracle_user}")
-            dynamic_path = dynamic_path.replace("/users/caleb.gavin", f"/users/{oracle_user}")
-            dynamic_path = dynamic_path.replace("QuickConfigTool", "QuickConfigEngine")
-            dynamic_rows.append((dynamic_path, obj_type, b64data))
+            object_name = original_path.rsplit("/", 1)[-1]
+            dynamic_path = (
+                f"{target_data_model_folder}/{object_name}"
+                if obj_type == "xdm"
+                else f"{target_root_folder}/{object_name}"
+            )
+            dynamic_rows.append((
+                dynamic_path,
+                obj_type,
+                prepare_catalog_payload(
+                    b64data,
+                    oracle_user,
+                    target_root_folder,
+                    target_data_model_folder,
+                ),
+            ))
 
         missing_folders = []
         missing_reports = []
@@ -340,14 +934,14 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         required_folders: set[str] = set()
 
         # Always include the top-level base folders
-        required_folders.add(user_base_path)
-        required_folders.add(f"{user_base_path}/Data Models")
+        required_folders.add(target_root_folder)
+        required_folders.add(target_data_model_folder)
 
         # Extract parent directories from every DB object path
         for path, obj_type, b64data in dynamic_rows:
             parent = path.rsplit("/", 1)[0]  # strip filename
             # Walk up the tree and collect every ancestor below /users/{username}
-            while parent and parent != user_base_path and len(parent) > len(user_base_path):
+            while parent and parent != target_root_folder and len(parent) > len(target_root_folder):
                 required_folders.add(parent)
                 parent = parent.rsplit("/", 1)[0]
 
@@ -365,7 +959,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             resp = send_soap_request(soap_url, folder_exists_request(folder, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ SOAP error while checking folder {folder}: {resp}")
+                append_log(f"❌ SOAP error while checking folder {folder}: {describe_soap_failure(resp)}")
                 return False
 
             exists = parse_boolean_response(resp.text, "isFolderExistInSessionReturn")
@@ -390,7 +984,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             resp = send_soap_request(soap_url, report_exists_request(path, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ SOAP error while checking object {path}: {resp}")
+                append_log(f"❌ SOAP error while checking object {path}: {describe_soap_failure(resp)}")
                 return False
 
             exists = parse_boolean_response(resp.text, "isReportExistInSessionReturn")
@@ -426,12 +1020,16 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             elif not getattr(resp, "ok", True):
                 # Oracle returns 500 if folder already exists or is cache-locked
                 resp_text = getattr(resp, "text", "")
-                if "already exists" in resp_text.lower() or "locked" in resp_text.lower():
+                lower_resp = resp_text.lower()
+                if (
+                    "already exists" in lower_resp
+                    or "duplicateresourceexception" in lower_resp
+                    or "locked" in lower_resp
+                ):
                     append_log(f"⚠️ Folder {folder} already exists or is locked — continuing")
                     created_set.add(folder)
                 else:
-                    append_log(f"❌ Failed to create folder {folder}: HTTP {resp.status_code}")
-                    append_log(f"   Response: {resp_text[:300]}")
+                    append_log(f"❌ Failed to create folder {folder}: {describe_soap_failure(resp)}")
                     failed_folders.append(folder)
                     success = False
             else:
@@ -442,7 +1040,8 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         # 5) Upload Reports & Data Models (only files with b64 data)
         # ---------------------------------------------------------------
-        for path, obj_type, b64data in dynamic_rows:
+        upload_rows = sorted(dynamic_rows, key=lambda row: 0 if row[1] == "xdm" else 1)
+        for path, obj_type, b64data in upload_rows:
             if path in already_existing_reports:
                 continue
             # Skip container entries with no binary payload
@@ -454,7 +1053,7 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             resp = send_soap_request(soap_url, upload_report_request(path, obj_type, b64data, session_token), http_session=http_session, timeout=120)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ Upload failed for {path}: {resp}")
+                append_log(f"❌ Upload failed for {path}: {describe_soap_failure(resp)}")
                 failed_reports.append(path)
                 success = False
             else:
@@ -504,8 +1103,8 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         if session_token:
             try:
-                success = bi_logout(url, session_token, http_session=http_session)
-                if success:
+                logout_ok = bi_logout(url, session_token, http_session=http_session)
+                if logout_ok:
                     append_log("✅ BI Logout Successful")
                 else:
                     append_log("❌ BI Logout failed")

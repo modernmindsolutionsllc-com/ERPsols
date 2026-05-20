@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -29,22 +29,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
-
-const DUMMY_MODULES = ['Financials', 'HCM', 'SCM', 'Procurement', 'CRM', 'Projects', 'Manufacturing', 'Analytics', 'Inventory'];
-const DUMMY_REPORTS: BipReportResponse[] = Array.from({ length: 85 }).map((_, i) => {
-  const module = DUMMY_MODULES[i % DUMMY_MODULES.length];
-  return {
-    id: -(i + 1),
-    report_name: `${module} Process Extract ${i + 1}`,
-    module: module,
-    description: `Sample dummy report ${i + 1} intended for testing ${module} datasets.`,
-    is_active: true,
-    created_at: new Date().toISOString()
-  };
-});
 
 function isApiError(v: unknown): v is { error: { message: string } } {
   return typeof v === 'object' && v !== null && 'error' in v;
@@ -60,6 +47,8 @@ function downloadWorkbook(blob: Blob, filename: string) {
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
+
+const ORACLE_VALIDATE_SOURCE_FOLDER = '/My Folders/Validate Catalog/Data Model';
 
 export function BIPReportingPage() {
   const { user } = useAuth();
@@ -85,12 +74,14 @@ export function BIPReportingPage() {
   
   // Combobox state
   const [openCombobox, setOpenCombobox] = useState(false);
+  const [reportSearch, setReportSearch] = useState('');
 
   // Catalog deployment state
   const [isCatalogRunning, setIsCatalogRunning] = useState(false);
   const [catalogLogs, setCatalogLogs] = useState<string[]>([]);
   const [catalogSuccess, setCatalogSuccess] = useState<boolean | null>(null);
   const [isCatalogLogOpen, setIsCatalogLogOpen] = useState(false);
+  const [catalogOperation, setCatalogOperation] = useState<'deploy' | 'sync'>('deploy');
 
   const fetchOracleStatus = useCallback(async () => {
     const res = await bipReportingApi.getOracleStatus();
@@ -116,11 +107,43 @@ export function BIPReportingPage() {
     const res = await bipReportingApi.getBipReports();
     if (isApiError(res)) {
       toast.error(res.error.message || 'Failed to load reports.');
-      setReports(DUMMY_REPORTS);
+      setReports([]);
     } else {
-      setReports([...res, ...DUMMY_REPORTS]);
+      setReports(res);
     }
   }, []);
+
+  const filteredReports = useMemo(() => {
+    const term = reportSearch.trim().toLowerCase();
+    if (!term) return reports;
+    return reports.filter(report => {
+      const haystack = [
+        report.module,
+        report.sub_module || '',
+        report.report_name,
+        report.description || '',
+      ].join(' ').toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [reports, reportSearch]);
+
+  const syncOracleQueriesForEnv = useCallback(async (envName: string) => {
+    const res = await bipReportingApi.importOracleCatalogQueries(
+      envName,
+      ORACLE_VALIDATE_SOURCE_FOLDER,
+    );
+
+    if (isApiError(res)) {
+      throw new Error(res.error.message || 'Oracle query sync failed.');
+    }
+
+    await fetchReports();
+    if (res.reports.length > 0 && !selectedReport) {
+      setSelectedReport(res.reports[0]);
+    }
+
+    return res;
+  }, [fetchReports, selectedReport]);
 
   useEffect(() => {
     async function init() {
@@ -130,10 +153,87 @@ export function BIPReportingPage() {
     void fetchReports();
   }, []);
 
+  useEffect(() => {
+    const refreshReports = () => void fetchReports();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshReports();
+    };
+
+    window.addEventListener('focus', refreshReports);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshReports);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [fetchReports]);
+
   // Fetch sessions after oracleStatus is available so auto-select uses the correct env
   useEffect(() => {
     if (oracleStatus) void fetchSessions();
   }, [oracleStatus]);
+
+  const runValidateCatalog = useCallback(async (envName: string) => {
+    setCatalogOperation('deploy');
+    setIsCatalogRunning(true);
+    setCatalogLogs([]);
+    setCatalogSuccess(null);
+    setIsCatalogLogOpen(true);
+    toast.info('Deploying catalog to Oracle...', { id: 'catalog-deploy' });
+
+    try {
+      const res = await bipReportingApi.validateCatalog(envName);
+      toast.dismiss('catalog-deploy');
+      if (isApiError(res)) {
+        toast.error(res.error.message || 'Catalog deployment failed.');
+        setCatalogLogs([res.error.message || 'Unknown error']);
+        setCatalogSuccess(false);
+      } else {
+        setCatalogLogs(res.logs);
+        setCatalogSuccess(res.success);
+        if (res.success) {
+          toast.success('Catalog deployed successfully!');
+          try {
+            setCatalogLogs(current => [
+              ...current,
+              '',
+              '===== Query Sync =====',
+              `Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`,
+              'Syncing Validate Catalog SQL definitions into SQLite...',
+            ]);
+            const syncRes = await syncOracleQueriesForEnv(envName);
+            setCatalogLogs(current => [
+              ...current,
+              ...syncRes.logs,
+              `Synced ${syncRes.imported_count} Validate Catalog quer${syncRes.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
+            ]);
+            toast.success(
+              `Synced ${syncRes.imported_count} Validate Catalog quer${syncRes.imported_count === 1 ? 'y' : 'ies'}.`,
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Oracle query sync failed.';
+            setCatalogLogs(current => [
+              ...current,
+              '',
+              '===== Query Sync =====',
+              `Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`,
+              `Sync failed: ${message}`,
+            ]);
+            setCatalogSuccess(false);
+            toast.warning(message);
+          }
+        } else {
+          toast.warning('Catalog deployment completed with issues.');
+        }
+      }
+    } catch {
+      toast.dismiss('catalog-deploy');
+      toast.error('Network error during catalog deployment.');
+      setCatalogLogs(['Network error: Could not reach the backend.']);
+      setCatalogSuccess(false);
+    } finally {
+      setIsCatalogRunning(false);
+    }
+  }, [syncOracleQueriesForEnv]);
 
   const handleSessionRefresh = useCallback(async (newActiveEnvName?: string) => {
     await fetchOracleStatus();
@@ -152,8 +252,11 @@ export function BIPReportingPage() {
           return updated || res[0];
         });
       }
+      if (newActiveEnvName) {
+        await runValidateCatalog(newActiveEnvName);
+      }
     }
-  }, [fetchOracleStatus]);
+  }, [fetchOracleStatus, runValidateCatalog]);
 
   const handleDeleteAll = useCallback(async () => {
     try {
@@ -179,32 +282,34 @@ export function BIPReportingPage() {
 
   const handleValidateCatalog = async () => {
     if (!activeEnv) { toast.error('Please select an Oracle environment first.'); return; }
+    await runValidateCatalog(activeEnv.env_name);
+  };
+
+  const handleSyncOracleQueries = async () => {
+    if (!activeEnv) { toast.error('Please select an Oracle environment first.'); return; }
+
+    setCatalogOperation('sync');
     setIsCatalogRunning(true);
-    setCatalogLogs([]);
+    setCatalogLogs([`Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`]);
     setCatalogSuccess(null);
     setIsCatalogLogOpen(true);
-    toast.info('Deploying catalog to Oracle...', { id: 'catalog-deploy' });
+    toast.info('Syncing SQL queries from Oracle catalog...', { id: 'catalog-query-sync' });
 
     try {
-      const res = await bipReportingApi.validateCatalog(activeEnv.env_name);
-      toast.dismiss('catalog-deploy');
-      if (isApiError(res)) {
-        toast.error(res.error.message || 'Catalog deployment failed.');
-        setCatalogLogs([res.error.message || 'Unknown error']);
-        setCatalogSuccess(false);
-      } else {
-        setCatalogLogs(res.logs);
-        setCatalogSuccess(res.success);
-        if (res.success) {
-          toast.success('Catalog deployed successfully!');
-        } else {
-          toast.warning('Catalog deployment completed with issues.');
-        }
-      }
-    } catch {
-      toast.dismiss('catalog-deploy');
-      toast.error('Network error during catalog deployment.');
-      setCatalogLogs(['Network error: Could not reach the backend.']);
+      const res = await syncOracleQueriesForEnv(activeEnv.env_name);
+      toast.dismiss('catalog-query-sync');
+
+      setCatalogLogs([`Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`, ...res.logs]);
+      setCatalogSuccess(true);
+
+      toast.success(
+        `Synced ${res.imported_count} Validate Catalog quer${res.imported_count === 1 ? 'y' : 'ies'}.`,
+      );
+    } catch (error) {
+      toast.dismiss('catalog-query-sync');
+      const message = error instanceof Error ? error.message : 'Network error while syncing Oracle catalog queries.';
+      toast.error(message);
+      setCatalogLogs([message]);
       setCatalogSuccess(false);
     } finally {
       setIsCatalogRunning(false);
@@ -219,56 +324,23 @@ export function BIPReportingPage() {
     toast.info('Executing report in Oracle BIP...', { id: 'run-report' });
     
     try {
-      if (selectedReport.id < 0) {
-        // Mock Execution for dummy data
-        await new Promise(res => setTimeout(res, 1500));
+      const response = await bipReportingApi.executeBipReports([selectedReport.id], activeEnv.env_name);
+      toast.dismiss('run-report');
+      if (isApiError(response)) { toast.error(response.error.message || 'Execution failed.'); }
+      else {
+        toast.success('Report executed successfully.');
+        const buffer = await response.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const targetSheetName = workbook.SheetNames.length > 1 ? workbook.SheetNames[1] : workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[targetSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
-        const mockRows = Array.from({ length: 15 }).map((_, rIdx) => ({
-          'ROW ID': 1000 + rIdx,
-          'MODULE': selectedReport.module,
-          'STATUS': rIdx % 3 === 0 ? 'PENDING' : 'COMPLETED',
-          'RECORD_TYPE': rIdx % 2 === 0 ? 'INVOICE' : 'PAYMENT',
-          'DESCRIPTION': `Autogenerated mock data for ${selectedReport.report_name} - Record ${rIdx + 1}`,
-          'AMOUNT': (Math.random() * 5000 + 100).toFixed(2),
-          'DATE_CREATED': format(new Date(), 'yyyy-MM-dd')
-        }));
-        
-        setTableData(mockRows);
+        setTableData(jsonData);
         setHasResults(true);
-        
-        const worksheet = XLSX.utils.json_to_sheet(mockRows);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Results');
-        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        
-        const workbookName = `${selectedReport.report_name.replace(/\s+/g, '_')}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`;
-        setLastWorkbook(blob);
+        const workbookName = `${selectedReport.report_name}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`;
+        setLastWorkbook(response);
         setLastWorkbookName(workbookName);
-        
-        toast.dismiss('run-report');
-        toast.success('Mock Report executed successfully.');
-        downloadWorkbook(blob, workbookName);
-      } else {
-        // Actual Execution
-        const response = await bipReportingApi.executeBipReports([selectedReport.id], activeEnv.env_name);
-        toast.dismiss('run-report');
-        if (isApiError(response)) { toast.error(response.error.message || 'Execution failed.'); }
-        else {
-          toast.success('Report executed successfully.');
-          const buffer = await response.arrayBuffer();
-          const workbook = XLSX.read(buffer, { type: 'array' });
-          const targetSheetName = workbook.SheetNames.length > 1 ? workbook.SheetNames[1] : workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[targetSheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet);
-          
-          setTableData(jsonData);
-          setHasResults(true);
-          const workbookName = `${selectedReport.report_name}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`;
-          setLastWorkbook(response);
-          setLastWorkbookName(workbookName);
-          downloadWorkbook(response, workbookName);
-        }
+        downloadWorkbook(response, workbookName);
       }
     } catch { toast.dismiss('run-report'); toast.error('An unexpected error occurred.'); }
     finally { setIsRunning(false); }
@@ -360,7 +432,14 @@ export function BIPReportingPage() {
                 <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2 block">
                   Select Oracle Report
                 </label>
-                <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                <Popover
+                  open={openCombobox}
+                  onOpenChange={(nextOpen) => {
+                    setOpenCombobox(nextOpen);
+                    if (nextOpen) void fetchReports();
+                    else setReportSearch('');
+                  }}
+                >
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -390,12 +469,25 @@ export function BIPReportingPage() {
                     side="bottom"
                     sideOffset={8}
                   >
-                    <Command className="dark:bg-[#0C1425]">
-                      <CommandInput placeholder="Search reports (e.g. HCM, Invoice)..." className="h-11" />
+                    <Command className="dark:bg-[#0C1425]" shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Search reports (e.g. HCM, Invoice)..."
+                        className="h-11"
+                        value={reportSearch}
+                        onValueChange={setReportSearch}
+                      />
                       <CommandList className="max-h-[300px] overflow-y-auto">
-                        <CommandEmpty>No reports found.</CommandEmpty>
-                        <CommandGroup heading="Available Reports">
-                          {reports.map((report) => (
+                        {reports.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                            No saved SQL reports found. Add one from Admin, then reopen this list.
+                          </div>
+                        ) : filteredReports.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                            No reports match your search.
+                          </div>
+                        ) : (
+                          <CommandGroup heading="Available Reports">
+                            {filteredReports.map((report) => (
                             <CommandItem
                               key={report.id}
                               value={`${report.module} ${report.report_name}`}
@@ -422,8 +514,9 @@ export function BIPReportingPage() {
                                 </div>
                               </div>
                             </CommandItem>
-                          ))}
-                        </CommandGroup>
+                            ))}
+                          </CommandGroup>
+                        )}
                       </CommandList>
                     </Command>
                   </PopoverContent>
@@ -478,6 +571,16 @@ export function BIPReportingPage() {
                 >
                   {isCatalogRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
                   {isCatalogRunning ? 'Deploying...' : 'Deploy Catalog'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleSyncOracleQueries}
+                  disabled={!oracleConnected || isCatalogRunning || !activeEnv}
+                  className="w-full lg:w-auto gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 h-9 text-xs font-semibold"
+                  size="sm"
+                >
+                  {isCatalogRunning && catalogOperation === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                  {isCatalogRunning && catalogOperation === 'sync' ? 'Syncing...' : 'Sync Queries'}
                 </Button>
                 <p className="text-[10px] text-muted-foreground text-center">
                   {activeEnv ? `Targeting ${activeEnv.env_name}` : 'Connect to Oracle first'}
@@ -587,7 +690,11 @@ export function BIPReportingPage() {
               )}
             </div>
             <DialogTitle className="text-center text-lg">
-              {catalogSuccess === null ? 'Deploying Catalog...' : catalogSuccess ? 'Catalog Deployed' : 'Deployment Issues'}
+              {catalogSuccess === null
+                ? catalogOperation === 'sync' ? 'Syncing Catalog Queries...' : 'Deploying Catalog...'
+                : catalogSuccess
+                  ? catalogOperation === 'sync' ? 'Queries Synced' : 'Catalog Deployed'
+                  : catalogOperation === 'sync' ? 'Sync Issues' : 'Deployment Issues'}
             </DialogTitle>
             <DialogDescription className="text-center">
               {activeEnv ? `Target: ${activeEnv.env_name}` : ''}

@@ -436,12 +436,17 @@ def deploy_catalog(
         logs.append(msg)
         logger.info("[catalog:%s] %s", env_name, msg)
 
-    success = validate_catalog(
-        username=credential.oracle_username,
-        password=plain_password,
-        url=credential.oracle_url,
-        env_name=env_name,
-        append_log=append_log,
-    )
+    try:
+        success = validate_catalog(
+            username=credential.oracle_username,
+            password=plain_password,
+            url=credential.oracle_url,
+            env_name=env_name,
+            append_log=append_log,
+        )
+    except Exception as exc:
+        logger.exception("Catalog deployment crashed for env=%s", env_name)
+        append_log(f"Catalog deployment failed before completion: {type(exc).__name__}: {exc}")
+        success = False
 
     return {"success": success, "logs": logs}

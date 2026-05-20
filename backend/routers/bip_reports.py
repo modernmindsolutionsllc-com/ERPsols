@@ -15,9 +15,17 @@ from fastapi.responses import StreamingResponse
 
 from database import get_db, BipReportConfig, OracleCredential
 from dependencies import require_tool_access
-from Schemas import BipReportCreate, BipReportResponse, DirectBipSqlRequest, ExecuteReportsRequest
+from Schemas import (
+    BipReportCreate,
+    BipReportResponse,
+    DirectBipSqlRequest,
+    ExecuteReportsRequest,
+    OracleCatalogImportRequest,
+    OracleCatalogImportResponse,
+)
 from routers.integrations import encrypt_password, decrypt_password
 from lib.config_generate import run_sqls_config_generation
+from lib.bi_helper import import_oracle_catalog_queries
 
 router = APIRouter(
     prefix="/api/v1/bip-reports",
@@ -128,6 +136,104 @@ def list_bip_reports(
 ):
     """List all stored BIP report configurations."""
     return db.query(BipReportConfig).all()
+
+
+@router.post("/import-oracle-catalog", response_model=OracleCatalogImportResponse)
+def import_oracle_catalog_reports(
+    body: OracleCatalogImportRequest,
+    current_user: dict = Depends(require_tool_access("bip_reporting")),
+    db: Session = Depends(get_db),
+):
+    """
+    Read original Oracle BI Publisher data models, extract SQL datasets,
+    and store them as local BIP report configurations under Validate Catalog.
+    """
+    user_id = int(current_user["sub"])
+    credential = _get_oracle_credential(db, user_id, body.env_name)
+    username, password, oracle_url = _decrypt_credential(credential)
+
+    logs: list[str] = []
+
+    def append_log(message: str) -> None:
+        logs.append(message)
+
+    try:
+        imported = import_oracle_catalog_queries(
+            username=username,
+            password=password,
+            url=oracle_url,
+            source_folder=body.source_folder,
+            append_log=append_log,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to import Oracle catalog queries: {exc}",
+        ) from exc
+
+    created_count = 0
+    updated_count = 0
+    saved_reports: list[BipReportConfig] = []
+
+    for item in imported:
+        report_name = str(item["report_name"]).strip()
+        sql_query = str(item["sql_query"]).strip()
+        if not report_name or not sql_query:
+            continue
+
+        encrypted_sql = encrypt_password(sql_query)
+        existing = (
+            db.query(BipReportConfig)
+            .filter(BipReportConfig.report_name == report_name)
+            .first()
+        )
+
+        if existing:
+            existing.module = "Validate Catalog"
+            existing.sub_module = item.get("sub_module")
+            existing.description = item.get("description")
+            existing.sql_query = ""
+            existing.encrypted_sql_query = encrypted_sql
+            existing.is_active = True
+            saved_reports.append(existing)
+            updated_count += 1
+        else:
+            new_report = BipReportConfig(
+                module="Validate Catalog",
+                sub_module=item.get("sub_module"),
+                report_name=report_name,
+                description=item.get("description"),
+                sql_query="",
+                encrypted_sql_query=encrypted_sql,
+                is_active=True,
+            )
+            db.add(new_report)
+            saved_reports.append(new_report)
+            created_count += 1
+
+    try:
+        db.commit()
+        for report in saved_reports:
+            db.refresh(report)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Could not save imported catalog queries because one or more report names already conflict.",
+        ) from exc
+
+    append_log(
+        f"Saved {len(saved_reports)} Validate Catalog report(s): "
+        f"{created_count} created, {updated_count} updated"
+    )
+
+    return OracleCatalogImportResponse(
+        imported_count=len(saved_reports),
+        updated_count=updated_count,
+        created_count=created_count,
+        logs=logs,
+        reports=saved_reports,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

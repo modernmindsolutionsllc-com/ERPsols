@@ -30,6 +30,7 @@ export function LoginPage() {
   const [step, setStep] = useState<SignInStep>('email');
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [devOtp, setDevOtp] = useState('');
   const [signupForm, setSignupForm] = useState<SignupPayload>(emptySignup);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,13 +41,15 @@ export function LoginPage() {
   const submitOtpRequest = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
+    setDevOtp('');
     setLoading(true);
-    const success = await requestOtp(email.trim());
+    const result = await requestOtp(email.trim());
     setLoading(false);
 
-    if (success) {
+    if (result) {
       setStep('otp');
       setOtpCode('');
+      setDevOtp(result.devOtp ?? '');
     } else {
       setError('Could not send the login code. Check the email and backend connection.');
     }
@@ -183,7 +186,11 @@ export function LoginPage() {
                     <input
                       type="email"
                       value={email}
-                      onChange={event => setEmail(event.target.value)}
+                      onChange={event => {
+                        setEmail(event.target.value);
+                        if (error) setError('');
+                        if (devOtp) setDevOtp('');
+                      }}
                       placeholder="you@company.com"
                       className="h-10 w-full rounded-md border border-[#CBD5E1] bg-white pl-10 pr-3 text-sm text-[#0F172A] transition-all placeholder:text-[#94A3B8] focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
                       required
@@ -207,6 +214,12 @@ export function LoginPage() {
                 <div className="rounded-md border border-[#D7E7F7] bg-[#F5FAFF] p-3 text-sm text-[#185FA5]">
                   Code sent for <span className="font-medium">{email}</span>
                 </div>
+
+                {devOtp && (
+                  <div className="rounded-md border border-[#F6D98F] bg-[#FFF9E8] p-3 text-sm text-[#8A6116]">
+                    Dev fallback code: <span className="font-mono font-semibold tracking-[0.2em]">{devOtp}</span>
+                  </div>
+                )}
 
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-[#0F172A]">6-digit code</span>

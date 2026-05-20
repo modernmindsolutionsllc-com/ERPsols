@@ -10,6 +10,7 @@ Legacy signup endpoint is preserved for user provisioning.
 """
 
 import secrets
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,11 +24,16 @@ from Schemas import (
     TokenResponse,
     UserResponse,
     MessageResponse,
+    OTPRequestResponse,
 )
 from Auth_utils import hash_password, create_access_token, send_otp_email
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -72,7 +78,7 @@ def signup(body: SignupRequest):
 #  STEP 1 — REQUEST OTP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/request-otp", response_model=MessageResponse)
+@router.post("/request-otp", response_model=OTPRequestResponse)
 def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     """
     Generate a cryptographically secure 6-digit OTP, store it on the user
@@ -110,11 +116,19 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     try:
         send_otp_email(user.email, otp_code)
     except RuntimeError:
-        # Log the error in production; don't leak internal details to the client
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send OTP email. Please try again later.",
-        )
+        if not _env_flag("DEV_OTP_FALLBACK"):
+            # Log the error in production; don't leak internal details to the client
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP email. Please try again later.",
+            )
+
+        response: dict[str, str] = {
+            "message": "OTP email delivery failed. Using local development fallback code."
+        }
+        if _env_flag("EXPOSE_DEV_OTP"):
+            response["dev_otp"] = otp_code
+        return response
 
     return {"message": "If this email is registered, an OTP has been sent."}
 

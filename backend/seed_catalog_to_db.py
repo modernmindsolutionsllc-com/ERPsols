@@ -24,8 +24,17 @@ import io
 import os
 import sys
 
-CATALOG_FILE = "QuickConfigTool.catalog"
-DB_PATH = os.getenv("DB_PATH", "app.db")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+CATALOG_FILE = os.path.join(BACKEND_DIR, "QuickConfigTool.catalog")
+
+
+def _resolve_db_path(raw_path: str) -> str:
+    if os.path.isabs(raw_path):
+        return raw_path
+    return os.path.join(BACKEND_DIR, raw_path)
+
+
+DB_PATH = _resolve_db_path(os.getenv("DB_PATH", "app.db"))
 TABLE_NAME = "bi_catalog_setup_data"
 
 # Top-level containers Oracle expects (without user prefix).

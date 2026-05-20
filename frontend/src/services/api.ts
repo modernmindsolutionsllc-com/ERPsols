@@ -287,7 +287,7 @@ export const authApi = {
     });
   },
 
-  async requestOtp(email: string): Promise<{ message: string } | ApiError> {
+  async requestOtp(email: string): Promise<{ message: string; dev_otp?: string } | ApiError> {
     return requestJson('/auth/request-otp', {
       method: 'POST',
       body: JSON.stringify({ email }),
@@ -594,6 +594,14 @@ export interface DirectBipSqlRequest {
   env_name: string;
 }
 
+export interface OracleCatalogImportResponse {
+  imported_count: number;
+  updated_count: number;
+  created_count: number;
+  logs: string[];
+  reports: BipReportResponse[];
+}
+
 export interface OracleStatus {
   connected: boolean;
   oracle_url?: string;
@@ -688,6 +696,15 @@ export const bipReportingApi = {
       body: JSON.stringify(data),
     }),
   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
+
+  importOracleCatalogQueries: (envName: string, sourceFolder?: string) =>
+    authenticatedJson<OracleCatalogImportResponse>('/api/v1/bip-reports/import-oracle-catalog', {
+      method: 'POST',
+      body: JSON.stringify({
+        env_name: envName,
+        source_folder: sourceFolder,
+      }),
+    }),
 
   executeBipReports: (reportIds: number[], envName: string) =>
     authenticatedBlob('/api/v1/bip-reports/execute', {

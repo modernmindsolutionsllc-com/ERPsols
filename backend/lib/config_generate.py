@@ -9,7 +9,14 @@ from threading import Lock
 from fastapi import HTTPException
 import csv
 
-from lib.bi_helper import bi_login, bi_logout, get_bip_PublicReportService_url, friendly_bi_error, run_bi_sql_in_session
+from lib.bi_helper import (
+    bi_login,
+    bi_logout,
+    get_bip_PublicReportService_url,
+    friendly_bi_error,
+    run_bi_sql_in_session,
+    get_dynamic_sql_report_path,
+)
 
 DEFAULT_COMPARE_THREADS = 10
 
@@ -205,7 +212,7 @@ def run_sqls_config_generation(
     and constructs a BR100-style Excel workbook in an in-memory BytesIO buffer.
     Returns: (BytesIO_buffer, list_of_errors)
     """
-    dyn_report_path = f"/users/{username.lower()}/QuickConfigEngine/Data Models/Dynamic SQL Executor DM.xdm"
+    dyn_report_path = get_dynamic_sql_report_path(username.lower())
     dyn_template = "blank_en_US"
     
     session_token = None
