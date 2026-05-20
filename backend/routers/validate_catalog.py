@@ -18,11 +18,11 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         soap_url = get_bip_PublicReportService_url(url)
 
-        # Oracle's internal user folders are ALWAYS lowercase
-        oracle_user = username.lower()
+        # Oracle's internal user folders are case-sensitive (e.g. Mary.David)
+        oracle_user = username.strip()
 
-        user_base_path = f"/users/{oracle_user}/QuickConfigEngine"
-        folders_to_check = [user_base_path, f"{user_base_path}/Data Models"]
+        user_base_path = f"/~{oracle_user}/QuickConfigTool"
+        folders_to_check = [user_base_path]
 
         missing_folders = []
         missing_reports = []
@@ -81,12 +81,11 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         )
         rows_raw = cursor.fetchall()
 
-        # Rewrite DB paths to the active user's directory (lowercase)
+        # Rewrite DB paths to the active user's directory (case-sensitive)
         rows_full = []
         for original_path, obj_type, b64data in rows_raw:
-            dynamic_path = original_path.replace("/users/mary.david", f"/users/{oracle_user}")
-            dynamic_path = dynamic_path.replace("/users/caleb.gavin", f"/users/{oracle_user}")
-            dynamic_path = dynamic_path.replace("QuickConfigTool", "QuickConfigEngine")
+            dynamic_path = original_path.replace("/users/Mary.David", f"/users/{oracle_user}")
+            dynamic_path = dynamic_path.replace("/users/Caleb.Gavin", f"/users/{oracle_user}")
             rows_full.append((dynamic_path, obj_type, b64data))
 
         for path, obj_type, b64data in rows_full:

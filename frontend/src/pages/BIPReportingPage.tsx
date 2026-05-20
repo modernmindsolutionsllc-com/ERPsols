@@ -48,7 +48,7 @@ function downloadWorkbook(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
-const ORACLE_VALIDATE_SOURCE_FOLDER = '/My Folders/Validate Catalog/Data Model';
+const ORACLE_VALIDATE_SOURCE_FOLDER = '/QuickConfigTool';
 
 export function BIPReportingPage() {
   const { user } = useAuth();
@@ -198,16 +198,16 @@ export function BIPReportingPage() {
               '',
               '===== Query Sync =====',
               `Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`,
-              'Syncing Validate Catalog SQL definitions into SQLite...',
+              'Syncing QuickConfigTool SQL definitions into SQLite...',
             ]);
             const syncRes = await syncOracleQueriesForEnv(envName);
             setCatalogLogs(current => [
               ...current,
               ...syncRes.logs,
-              `Synced ${syncRes.imported_count} Validate Catalog quer${syncRes.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
+              `Synced ${syncRes.imported_count} QuickConfigTool quer${syncRes.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
             ]);
             toast.success(
-              `Synced ${syncRes.imported_count} Validate Catalog quer${syncRes.imported_count === 1 ? 'y' : 'ies'}.`,
+              `Synced ${syncRes.imported_count} QuickConfigTool quer${syncRes.imported_count === 1 ? 'y' : 'ies'}.`,
             );
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Oracle query sync failed.';
@@ -303,7 +303,7 @@ export function BIPReportingPage() {
       setCatalogSuccess(true);
 
       toast.success(
-        `Synced ${res.imported_count} Validate Catalog quer${res.imported_count === 1 ? 'y' : 'ies'}.`,
+        `Synced ${res.imported_count} QuickConfigTool quer${res.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
       );
     } catch (error) {
       toast.dismiss('catalog-query-sync');

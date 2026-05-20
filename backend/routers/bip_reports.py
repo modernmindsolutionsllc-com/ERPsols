@@ -223,7 +223,7 @@ def import_oracle_catalog_reports(
         ) from exc
 
     append_log(
-        f"Saved {len(saved_reports)} Validate Catalog report(s): "
+        f"Saved {len(saved_reports)} QuickConfigTool report(s): "
         f"{created_count} created, {updated_count} updated"
     )
 

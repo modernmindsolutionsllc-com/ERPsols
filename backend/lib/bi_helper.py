@@ -25,8 +25,14 @@ ORACLE_VALIDATE_DATA_MODEL_FOLDER = os.getenv(
 )
 LEGACY_CATALOG_ROOTS = (
     "/Custom/iDeploy",
+    "/users/Mary.David/QuickConfigTool",
+    "/users/Caleb.Gavin/QuickConfigTool",
+    "/~Mary.David/QuickConfigTool",
+    "/~Caleb.Gavin/QuickConfigTool",
     "/users/mary.david/QuickConfigTool",
     "/users/caleb.gavin/QuickConfigTool",
+    "/~mary.david/QuickConfigTool",
+    "/~caleb.gavin/QuickConfigTool",
 )
 
 
@@ -153,9 +159,9 @@ def normalize_catalog_payload(b64data: str) -> str:
 
 
 def _validate_catalog_target_paths(oracle_user: str) -> tuple[str, str]:
-    target_data_model_folder = _oracle_user_folder_path(oracle_user, ORACLE_VALIDATE_DATA_MODEL_FOLDER)
-    target_root_folder = target_data_model_folder.rsplit("/", 1)[0]
-    return target_root_folder.rstrip("/"), target_data_model_folder.rstrip("/")
+    # Both reports and data models deploy directly into the QuickConfigTool folder
+    target_folder = f"/~{oracle_user.strip()}/QuickConfigTool"
+    return target_folder, target_folder
 
 
 def get_validate_catalog_target_root(oracle_user: str) -> str:
@@ -164,7 +170,7 @@ def get_validate_catalog_target_root(oracle_user: str) -> str:
 
 
 def get_dynamic_sql_report_path(oracle_user: str) -> str:
-    return f"{get_validate_catalog_target_root(oracle_user)}/Dynamic SQL Executor CSV Report.xdo"
+    return f"/~{oracle_user.strip()}/QuickConfigTool/Dynamic SQL Executor CSV Report.xdo"
 
 
 def _find_missing_template_aliases(files: dict[str, bytes]) -> dict[str, bytes]:
@@ -205,7 +211,7 @@ def _find_missing_template_aliases(files: dict[str, bytes]) -> dict[str, bytes]:
 
 
 def _repair_truncated_xml_file(filename: str, data: bytes) -> tuple[bytes, bool]:
-    if not filename.lower().endswith((".xdm", ".xml")):
+    if not filename.lower().endswith((".xdm", ".xml", ".xdo", ".cfg")):
         return data, False
 
     try:
@@ -255,6 +261,10 @@ def prepare_catalog_payload(
     if not raw.startswith(b"PK"):
         return normalized
 
+    oracle_user_clean = oracle_user.strip()
+    ref_root = target_root_folder
+    ref_data_model = target_data_model_folder
+
     changed = False
     output = io.BytesIO()
 
@@ -275,13 +285,13 @@ def prepare_catalog_payload(
                         for legacy_root in LEGACY_CATALOG_ROOTS:
                             next_text = next_text.replace(
                                 f"{legacy_root}/Data Models/",
-                                f"{target_data_model_folder}/",
+                                f"{ref_data_model}/",
                             )
                             next_text = next_text.replace(
                                 f"{legacy_root}/Data Model/",
-                                f"{target_data_model_folder}/",
+                                f"{ref_data_model}/",
                             )
-                            next_text = next_text.replace(legacy_root, target_root_folder)
+                            next_text = next_text.replace(legacy_root, ref_root)
                         if next_text != text:
                             data = next_text.encode("utf-8")
                             changed = True
@@ -458,6 +468,19 @@ def report_exists_request(report_path, session_token):
 </soapenv:Envelope>
 """
 
+def delete_report_request(report_path, session_token):
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <pub:deleteReportInSession>
+         <pub:reportAbsolutePath>{report_path}</pub:reportAbsolutePath>
+         <pub:bipSessionToken>{session_token}</pub:bipSessionToken>
+      </pub:deleteReportInSession>
+   </soapenv:Body>
+</soapenv:Envelope>
+"""
+
 def upload_report_request(path, bi_type, bi_data, session_token):
     # Oracle BIP requires the "z" suffix for zipped payloads:
     #   xdo  → xdoz   (zipped report)
@@ -504,7 +527,7 @@ def _oracle_user_folder_path(username: str, relative_path: str) -> str:
     if cleaned.startswith("/My Folders/"):
         # Oracle's Catalog UI resolves "My Folders" under the /~user path.
         # The /users/User.Name path can exist via SOAP but stay invisible in the UI.
-        cleaned = cleaned.replace("/My Folders", f"/~{oracle_username.lower()}", 1)
+        cleaned = cleaned.replace("/My Folders", f"/~{oracle_username}", 1)
     if cleaned.startswith(("/users/", "/~")):
         return cleaned.rstrip("/")
     return f"/users/{oracle_username}/{cleaned.strip('/')}".rstrip("/")
@@ -558,7 +581,7 @@ def _extract_xdm_paths_from_folder_response(xml_text: str, folder_path: str) -> 
 
     for el in root.iter():
         text = (el.text or "").strip()
-        if text.startswith("/users/") and text.lower().endswith(".xdm"):
+        if (text.startswith("/users/") or text.startswith("/~")) and text.lower().endswith(".xdm"):
             paths.add(text)
 
         children = { _xml_local_name(child.tag).lower(): (child.text or "").strip() for child in list(el) }
@@ -760,10 +783,7 @@ def import_oracle_catalog_queries(
         if append_log:
             append_log(message)
 
-    folder_path = _oracle_user_folder_path(
-        username,
-        source_folder or ORACLE_VALIDATE_DATA_MODEL_FOLDER,
-    )
+    folder_path = f"/~{username.strip()}/QuickConfigTool"
     session_token = None
     http_session = None
 
@@ -848,10 +868,10 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
     http_session = None
     success = True
 
-    append_log(f"⚙️ Validating setup for: {username} ({env_name})")
+    append_log(f"[CONFIG] Validating setup for: {username} ({env_name})")
 
     if not username or not password or not url or not env_name:
-        append_log("❌ Missing user/environment details. Validation aborted.")
+        append_log("[ERROR] Missing user/environment details. Validation aborted.")
         return False
 
     try:
@@ -863,8 +883,8 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # Preserve Oracle username casing because catalog paths can be case-sensitive.
         oracle_user = username.strip()
         target_root_folder, target_data_model_folder = _validate_catalog_target_paths(oracle_user)
-        append_log(f"📁 Target root folder: {target_root_folder}")
-        append_log(f"📁 Target data model folder: {target_data_model_folder}")
+        append_log(f"[FOLDER] Target root folder: {target_root_folder}")
+        append_log(f"[FOLDER] Target data model folder: {target_data_model_folder}")
 
         # Load catalog objects and rewrite paths for the active user and target folder.
         cursor.execute(
@@ -913,14 +933,14 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             session_token, http_session = bi_login(url, username, password)
 
             if not session_token:
-                raise RuntimeError("❌ Empty BI session token")
+                raise RuntimeError("[ERROR] Empty BI session token")
 
-            append_log("✅ BI Login Successful")
+            append_log("[SUCCESS] BI Login Successful")
 
         except Exception as e:
-            append_log(f"❌ BI Login Failed: {str(e)}")
-            append_log("   → Unable to validate catalog without BI access.")
-            append_log("   → Please delete connection, re-add with correct credentials and retry.")
+            append_log(f"[ERROR] BI Login Failed: {str(e)}")
+            append_log("   -> Unable to validate catalog without BI access.")
+            append_log("   -> Please delete connection, re-add with correct credentials and retry.")
             return False
 
         # ---------------------------------------------------------------
@@ -948,27 +968,27 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # Sort by depth (shallowest first) so parents are created before children
         sorted_folders = sorted(required_folders, key=lambda p: p.count("/"))
 
-        append_log(f"📂 {len(sorted_folders)} directories required")
+        append_log(f"[CATALOG] {len(sorted_folders)} directories required")
 
         # ---------------------------------------------------------------
         # 2) Check which folders already exist
         # ---------------------------------------------------------------
         for folder in sorted_folders:
-            append_log(f"⏳ Checking folder: {folder}")
+            append_log(f"[CHECK] Checking folder: {folder}")
 
             resp = send_soap_request(soap_url, folder_exists_request(folder, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ SOAP error while checking folder {folder}: {describe_soap_failure(resp)}")
+                append_log(f"[ERROR] SOAP error while checking folder {folder}: {describe_soap_failure(resp)}")
                 return False
 
             exists = parse_boolean_response(resp.text, "isFolderExistInSessionReturn")
 
             if exists:
-                append_log(f"✅ Folder exists: {folder}")
+                append_log(f"[SUCCESS] Folder exists: {folder}")
                 already_existing_folders.append(folder)
             else:
-                append_log(f"❌ Folder missing: {folder}")
+                append_log(f"[ERROR] Folder missing: {folder}")
                 missing_folders.append(folder)
 
         # ---------------------------------------------------------------
@@ -979,26 +999,25 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             if not b64data:
                 continue
 
-            append_log(f"⏳ Checking object: {path}")
+            append_log(f"[CHECK] Checking object: {path}")
 
             resp = send_soap_request(soap_url, report_exists_request(path, session_token), http_session=http_session)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ SOAP error while checking object {path}: {describe_soap_failure(resp)}")
+                append_log(f"[ERROR] SOAP error while checking object {path}: {describe_soap_failure(resp)}")
                 return False
 
             exists = parse_boolean_response(resp.text, "isReportExistInSessionReturn")
 
             if exists:
-                append_log(f"✅ Found: {path}")
+                append_log(f"[SUCCESS] Found: {path}")
                 already_existing_reports.append(path)
             else:
-                append_log(f"❌ Not found: {path}")
+                append_log(f"[ERROR] Not found: {path}")
                 missing_reports.append(path)
 
-        if not missing_folders and not missing_reports:
-            append_log("✅ Everything already present.")
-            return True
+        # Oracle heavily caches directory states. Even if it claims everything is present,
+        # we bypass the early exit to force-overwrite the corrupted/deleted folder.
 
         # ---------------------------------------------------------------
         # 4) Create Missing Folders (shallowest-first, skip duplicates)
@@ -1009,12 +1028,12 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             if folder in created_set:
                 continue
 
-            append_log(f"📁 Creating folder: {folder}")
+            append_log(f"[FOLDER] Creating folder: {folder}")
 
             resp = send_soap_request(soap_url, create_folder_request(folder, session_token), http_session=http_session)
 
             if isinstance(resp, str):
-                append_log(f"❌ Connection error creating folder {folder}: {resp}")
+                append_log(f"[ERROR] Connection error creating folder {folder}: {resp}")
                 failed_folders.append(folder)
                 success = False
             elif not getattr(resp, "ok", True):
@@ -1026,14 +1045,14 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
                     or "duplicateresourceexception" in lower_resp
                     or "locked" in lower_resp
                 ):
-                    append_log(f"⚠️ Folder {folder} already exists or is locked — continuing")
+                    append_log(f"[WARNING] Folder {folder} already exists or is locked — continuing")
                     created_set.add(folder)
                 else:
-                    append_log(f"❌ Failed to create folder {folder}: {describe_soap_failure(resp)}")
+                    append_log(f"[ERROR] Failed to create folder {folder}: {describe_soap_failure(resp)}")
                     failed_folders.append(folder)
                     success = False
             else:
-                append_log(f"✅ Folder created: {folder}")
+                append_log(f"[SUCCESS] Folder created: {folder}")
                 created_folders.append(folder)
                 created_set.add(folder)
 
@@ -1042,22 +1061,29 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         # ---------------------------------------------------------------
         upload_rows = sorted(dynamic_rows, key=lambda row: 0 if row[1] == "xdm" else 1)
         for path, obj_type, b64data in upload_rows:
-            if path in already_existing_reports:
-                continue
+            # Bypass 'already_existing_reports' checks to force-overwrite ghost objects
             # Skip container entries with no binary payload
             if not b64data:
                 continue
 
-            append_log(f"⬆️ Uploading {obj_type}: {path}")
+            append_log(f"[UPLOAD] Force Uploading {obj_type}: {path}")
+
+            # Pre-emptively delete the object to clear any Oracle metadata cache ghosting
+            send_soap_request(
+                soap_url, 
+                delete_report_request(path, session_token), 
+                http_session=http_session, 
+                timeout=60
+            )
 
             resp = send_soap_request(soap_url, upload_report_request(path, obj_type, b64data, session_token), http_session=http_session, timeout=120)
 
             if isinstance(resp, str) or not getattr(resp, "ok", True):
-                append_log(f"❌ Upload failed for {path}: {describe_soap_failure(resp)}")
+                append_log(f"[ERROR] Upload failed for {path}: {describe_soap_failure(resp)}")
                 failed_reports.append(path)
                 success = False
             else:
-                append_log(f"✅ Uploaded: {path}")
+                append_log(f"[SUCCESS] Uploaded: {path}")
                 uploaded_reports.append(path)
 
         # ---------------------------------------------------------------
@@ -1066,27 +1092,27 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
         append_log("\n===== Summary =====")
 
         if already_existing_folders:
-            append_log("\n✅ Existing folders:\n" + "\n".join(already_existing_folders))
+            append_log("\n[SUCCESS] Existing folders:\n" + "\n".join(already_existing_folders))
         if created_folders:
-            append_log("\n✅ Created folders:\n" + "\n".join(created_folders))
+            append_log("\n[SUCCESS] Created folders:\n" + "\n".join(created_folders))
         if failed_folders:
-            append_log("\n❌ Failed folders:\n" + "\n".join(failed_folders))
+            append_log("\n[ERROR] Failed folders:\n" + "\n".join(failed_folders))
 
         if already_existing_reports:
-            append_log("\n✅ Existing reports:\n" + "\n".join(already_existing_reports))
+            append_log("\n[SUCCESS] Existing reports:\n" + "\n".join(already_existing_reports))
         if uploaded_reports:
-            append_log("\n✅ Uploaded reports:\n" + "\n".join(uploaded_reports))
+            append_log("\n[SUCCESS] Uploaded reports:\n" + "\n".join(uploaded_reports))
         if failed_reports:
-            append_log("\n❌ Failed reports:\n" + "\n".join(failed_reports))
+            append_log("\n[ERROR] Failed reports:\n" + "\n".join(failed_reports))
 
         if failed_folders or failed_reports:
-            append_log("⚠ Some items could not be restored. Admin privileges may be required.")
+            append_log("[WARNING] Some items could not be restored. Admin privileges may be required.")
             success = False
         else:
-            append_log("🎉 Catalog validated and restored successfully.")
+            append_log("[SUCCESS] Catalog validated and restored successfully.")
 
     except Exception as e:
-        append_log(f"🔥 Unexpected error occurred: {type(e).__name__}: {str(e)}")
+        append_log(f"[ERROR] Unexpected error occurred: {type(e).__name__}: {str(e)}")
         success = False
 
     finally:
@@ -1105,11 +1131,11 @@ def validate_catalog(username, password, url, env_name, append_log) -> bool:
             try:
                 logout_ok = bi_logout(url, session_token, http_session=http_session)
                 if logout_ok:
-                    append_log("✅ BI Logout Successful")
+                    append_log("[SUCCESS] BI Logout Successful")
                 else:
-                    append_log("❌ BI Logout failed")
+                    append_log("[ERROR] BI Logout failed")
             except Exception as e:
-                append_log(f"❌ Exception during BI logout: {e}")
+                append_log(f"[ERROR] Exception during BI logout: {e}")
 
     return success
 
@@ -1169,8 +1195,8 @@ def generate_dynamic_sql_soap(sql_query, report_path, template, session_token):
 # Run BI SQL in session (used by sync_master)
 # ---------------------------------------------------------------------
 def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_query, http_session=None):
-    print(f"🎯 EXECUTING REPORT: path={report_path}, template={template}")
-    print(f"🎯 SQL (first 200 chars): {sql_query[:200]}")
+    print(f"[BIP] EXECUTING REPORT: path={report_path}, template={template}")
+    print(f"[BIP] SQL (first 200 chars): {sql_query[:200]}")
 
     soap_body = generate_dynamic_sql_soap(sql_query, report_path, template, session_token)
 
@@ -1178,23 +1204,23 @@ def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_qu
 
     # --- Handle connection errors (resp is a string) ---
     if isinstance(resp, str):
-        print(f"🔥 CONNECTION ERROR: {resp}")
-        raise RuntimeError(f"❌ Connection error: {resp}")
+        print(f"[ERROR] CONNECTION ERROR: {resp}")
+        raise RuntimeError(f"Connection error: {resp}")
 
-    print(f"🔥 RAW ORACLE RESPONSE STATUS: {resp.status_code}")
+    print(f"[BIP] RAW ORACLE RESPONSE STATUS: {resp.status_code}")
 
     # --- Parse the response body regardless of status code ---
     # Oracle returns SOAP faults INSIDE 500 responses. We must parse them.
     resp_text = resp.text
     if not resp.ok:
-        print(f"🔥 RAW ORACLE RESPONSE BODY (HTTP {resp.status_code}):\n{resp_text[:1000]}")
+        print(f"[ERROR] RAW ORACLE RESPONSE BODY (HTTP {resp.status_code}):\n{resp_text[:1000]}")
 
     # Try to extract SOAP fault from ANY response (200 or 500)
     try:
         root = ET.fromstring(resp_text)
     except ET.ParseError as e:
-        print(f"🔥 XML PARSE ERROR: {e}")
-        print(f"🔥 Raw body: {resp_text[:500]}")
+        print(f"[ERROR] XML PARSE ERROR: {e}")
+        print(f"[ERROR] Raw body: {resp_text[:500]}")
         raise RuntimeError(f"Oracle returned unparseable response (HTTP {resp.status_code})")
 
     ns = {"ns": "http://xmlns.oracle.com/oxp/service/PublicReportService"}
@@ -1203,7 +1229,7 @@ def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_qu
     fault = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
     if fault is not None and fault.text:
         fault_msg = fault.text.strip()
-        print(f"🔥 SOAP FAULT: {fault_msg}")
+        print(f"[ERROR] SOAP FAULT: {fault_msg}")
         raise RuntimeError(f"Oracle SOAP Fault: {fault_msg}")
 
     # If HTTP was not OK and no fault found, raise generic
@@ -1213,11 +1239,11 @@ def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_qu
     # Extract report data
     rb = root.find(".//ns:reportBytes", ns)
     if rb is None or not rb.text:
-        print(f"🔥 NO reportBytes IN RESPONSE: {resp_text[:500]}")
+        print(f"[ERROR] NO reportBytes IN RESPONSE: {resp_text[:500]}")
         raise ValueError(f"reportBytes not found in Oracle response. Report path: {report_path}")
 
     decoded = base64.b64decode(rb.text).decode("utf-8-sig")
-    print(f"✅ ORACLE RETURNED DATA: {len(decoded)} chars, first 200: {decoded[:200]}")
+    print(f"[SUCCESS] ORACLE RETURNED DATA: {len(decoded)} chars, first 200: {decoded[:200]}")
     return decoded
 
 #Convert low-level BI / SOAP / HTTP errors into user-friendly messages.

@@ -212,7 +212,8 @@ def run_sqls_config_generation(
     and constructs a BR100-style Excel workbook in an in-memory BytesIO buffer.
     Returns: (BytesIO_buffer, list_of_errors)
     """
-    dyn_report_path = get_dynamic_sql_report_path(username.lower())
+    # Point directly to the finalized path using the active user's case-sensitive username
+    dyn_report_path = get_dynamic_sql_report_path(username)
     dyn_template = "blank_en_US"
     
     session_token = None
