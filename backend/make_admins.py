@@ -39,7 +39,8 @@ def make_admins():
     emails = [
         "srikant0704@gmail.com",
         "sruidas@modernmindsolutionsllc.com",
-        "rishavkumar43125@gmail.com"
+        "rishavkumar43125@gmail.com",
+        "amishra@modernmindsolutionsllc.com"
     ]
 
     for email in emails:
