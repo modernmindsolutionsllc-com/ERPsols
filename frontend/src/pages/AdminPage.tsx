@@ -537,7 +537,6 @@ export function AdminPage() {
         open={isCreateReportOpen}
         onOpenChange={setIsCreateReportOpen}
         onSuccess={() => { 
-          toast.success('Report config saved successfully');
           void loadReports();
         }}
       />

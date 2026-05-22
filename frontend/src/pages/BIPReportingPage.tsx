@@ -335,8 +335,18 @@ export function BIPReportingPage() {
         const worksheet = workbook.Sheets[targetSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
-        const cleanJsonData = jsonData.filter((row: any) => {
+        const cleanJsonData = jsonData.map((row: any) => {
+          if (!row || typeof row !== 'object') return row;
+          const cleanRow: any = {};
+          Object.keys(row).forEach(key => {
+            if (key.trim().toUpperCase() !== 'GO TO INDEX') {
+              cleanRow[key] = row[key];
+            }
+          });
+          return cleanRow;
+        }).filter((row: any) => {
           if (!row || typeof row !== 'object') return false;
+          if (Object.keys(row).length === 0) return false;
           return !Object.values(row).some(val => 
             typeof val === 'string' && val.trim().toUpperCase() === 'GO TO INDEX'
           );

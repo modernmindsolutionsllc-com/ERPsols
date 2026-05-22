@@ -53,7 +53,7 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
       if (hasError(response)) {
         toast.error(response.error.message || 'Failed to save BIP report configuration.');
       } else {
-        toast.success('BIP Report Configuration added successfully!');
+        toast.success('Report Added Successfully');
         if (onSuccess) onSuccess();
         onOpenChange(false);
         // Reset form to defaults
