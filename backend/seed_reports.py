@@ -6,14 +6,14 @@ def seed_database():
     
     try:
         test_report_1 = BipReportConfig(
-            module="Finance",
+            module="Payroll",
             report_name="Q3_Revenue_Test",
             description="Test query for revenue",
             sql_query="SELECT 'TEST_DATA' as col1, 1000 as revenue FROM DUAL"
         )
         
         test_report_2 = BipReportConfig(
-            module="HCM",
+            module="Core HR",
             report_name="Employee_Count",
             description="01_Pulls total active employees",
             sql_query="Select count(person_number) from per_all_people_f"

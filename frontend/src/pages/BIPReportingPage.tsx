@@ -471,7 +471,7 @@ export function BIPReportingPage() {
                   >
                     <Command className="dark:bg-[#0C1425]" shouldFilter={false}>
                       <CommandInput
-                        placeholder="Search reports (e.g. HCM, Invoice)..."
+                        placeholder="Search reports (e.g. Core HR, Payroll)..."
                         className="h-11"
                         value={reportSearch}
                         onValueChange={setReportSearch}

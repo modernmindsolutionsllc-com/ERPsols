@@ -27,7 +27,7 @@ interface CreateBipReportModalProps {
 }
 
 export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBipReportModalProps) {
-  const [module, setModule] = useState('HCM');
+  const [module, setModule] = useState('Core HR');
   const [reportName, setReportName] = useState('Sample_Test_Report');
   const [sqlQuery, setSqlQuery] = useState('select 1 from dual');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,7 +55,7 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
         if (onSuccess) onSuccess();
         onOpenChange(false);
         // Reset form to defaults
-        setModule('HCM');
+        setModule('Core HR');
         setReportName('Sample_Test_Report');
         setSqlQuery('select 1 from dual');
       }
@@ -84,10 +84,13 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
                 <SelectValue placeholder="Select Module" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="HCM">HCM</SelectItem>
-                <SelectItem value="FIN">FIN</SelectItem>
-                <SelectItem value="SCM">SCM</SelectItem>
-                <SelectItem value="CX">CX</SelectItem>
+                <SelectItem value="Core HR">Core HR</SelectItem>
+                <SelectItem value="Payroll">Payroll</SelectItem>
+                <SelectItem value="Benefits">Benefits</SelectItem>
+                <SelectItem value="Talent">Talent</SelectItem>
+                <SelectItem value="Absence">Absence</SelectItem>
+                <SelectItem value="OTL">OTL</SelectItem>
+                <SelectItem value="Setup">Setup</SelectItem>
               </SelectContent>
             </Select>
           </div>
