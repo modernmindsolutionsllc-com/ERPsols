@@ -54,7 +54,7 @@ export function AdminPage() {
   const [isCreateReportOpen, setIsCreateReportOpen] = useState(false);
   const [reports, setReports] = useState<BipReportResponse[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshUser } = useAuth();
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -146,15 +146,24 @@ export function AdminPage() {
     const nextAccess = getDraftAccess(targetUser);
 
     setSavingAccess(targetUser.id);
-    const res = await adminApi.updateUser(targetUser.id, { tool_access: nextAccess });
-    if (isApiError(res)) {
-      toast.error(res.error.message);
-    } else {
-      toast.success('Tool access updated');
-      setUsers(prev => prev.map(u => u.id === targetUser.id ? res : u));
-      setDraftToolAccess(prev => ({ ...prev, [targetUser.id]: res.tool_access }));
+    try {
+      const res = await adminApi.updateUser(targetUser.id, { tool_access: nextAccess });
+      if (isApiError(res)) {
+        toast.error(res.error.message);
+      } else {
+        toast.success('Tool access updated');
+        setUsers(prev => prev.map(u => u.id === targetUser.id ? res : u));
+        setDraftToolAccess(prev => ({ ...prev, [targetUser.id]: res.tool_access }));
+        
+        // Immediately trigger global & local auto-refresh
+        await loadUsers();
+        await refreshUser();
+      }
+    } catch {
+      toast.error('An unexpected error occurred while saving tool access.');
+    } finally {
+      setSavingAccess(null);
     }
-    setSavingAccess(null);
   }
 
   async function handleDeleteUser(targetUser: ACPUser) {
@@ -397,7 +406,7 @@ export function AdminPage() {
                               className="inline-flex items-center gap-1 rounded-md bg-[#185FA5] px-2 py-1 text-xs font-semibold text-white hover:bg-[#124A82] disabled:opacity-60"
                             >
                               {savingAccess === u.id ? <Loader2 size={11} className="animate-spin" /> : null}
-                              Save tools
+                              {savingAccess === u.id ? 'Saving...' : 'Save tools'}
                             </button>
                           )}
                         </div>
