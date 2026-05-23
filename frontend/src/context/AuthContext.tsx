@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state]);
 
-  // Idle timeout (15 minutes, warning at 13)
+  // Idle timeout (35 minutes, warning at 33)
   useEffect(() => {
     if (!state.isAuthenticated) return;
 
@@ -52,11 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       warningTimer = setTimeout(() => {
         warned = true;
         toast.warning('Session expires in 2 minutes. Click anywhere to stay signed in.', { duration: 120000 });
-      }, 13 * 60 * 1000);
+      }, 33 * 60 * 1000);
       logoutTimer = setTimeout(() => {
         toast.error('Session expired. Please sign in again.');
         logout();
-      }, 15 * 60 * 1000);
+      }, 35 * 60 * 1000);
     };
 
     resetTimers();

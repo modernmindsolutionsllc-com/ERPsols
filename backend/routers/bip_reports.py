@@ -105,22 +105,40 @@ def create_bip_report(
     current_user: dict = Depends(require_tool_access("bip_reporting")),
     db: Session = Depends(get_db)
 ):
-    """Create a new BIP Report configuration."""
+    """Create or update a BIP report configuration by unique report_name."""
     encrypted_sql = encrypt_password(report_in.sql_query) if report_in.sql_query else None
-    
-    new_report = BipReportConfig(
-        module=report_in.module,
-        sub_module=report_in.sub_module,
-        report_name=report_in.report_name,
-        description=report_in.description,
-        encrypted_sql_query=encrypted_sql,
-        sql_query="",
+
+    report_name = report_in.report_name.strip()
+    existing = (
+        db.query(BipReportConfig)
+        .filter(BipReportConfig.report_name == report_name)
+        .first()
     )
-    db.add(new_report)
+
+    if existing:
+        existing.module = report_in.module
+        existing.sub_module = report_in.sub_module
+        existing.description = report_in.description
+        existing.sql_query = report_in.sql_query
+        existing.encrypted_sql_query = encrypted_sql
+        existing.is_active = True
+        target = existing
+    else:
+        target = BipReportConfig(
+            module=report_in.module,
+            sub_module=report_in.sub_module,
+            report_name=report_name,
+            description=report_in.description,
+            encrypted_sql_query=encrypted_sql,
+            sql_query=report_in.sql_query,
+            is_active=True,
+        )
+        db.add(target)
+
     try:
         db.commit()
-        db.refresh(new_report)
-        return new_report
+        db.refresh(target)
+        return target
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -219,7 +237,7 @@ def import_oracle_catalog_reports(
             existing.module = "Validate Catalog"
             existing.sub_module = item.get("sub_module")
             existing.description = item.get("description")
-            existing.sql_query = ""
+            existing.sql_query = sql_query
             existing.encrypted_sql_query = encrypted_sql
             existing.is_active = True
             saved_reports.append(existing)
@@ -230,7 +248,7 @@ def import_oracle_catalog_reports(
                 sub_module=item.get("sub_module"),
                 report_name=report_name,
                 description=item.get("description"),
-                sql_query="",
+                sql_query=sql_query,
                 encrypted_sql_query=encrypted_sql,
                 is_active=True,
             )

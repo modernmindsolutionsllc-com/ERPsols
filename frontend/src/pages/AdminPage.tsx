@@ -337,22 +337,22 @@ export function AdminPage() {
             <p className="text-sm">No users found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="max-h-[60vh] overflow-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] dark:bg-slate-900 border-b border-[#E2E8F0] dark:border-white/10">
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Email</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Username</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Role</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Tools</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Joined</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Last Active</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">ID</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Email</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Username</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Role</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Tools</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Joined</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Last Active</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">
                     <span className="flex items-center gap-1"><Clock size={12} /> Active Time</span>
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
-                  <th className="text-center px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Actions</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Status</th>
+                  <th className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-900 text-center px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#64748B] dark:text-slate-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
@@ -497,13 +497,14 @@ export function AdminPage() {
               </Button>
             </div>
           ) : (
+            <div className="max-h-[45vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-[#F8FAFC] dark:bg-slate-800/50 hover:bg-[#F8FAFC] dark:hover:bg-slate-800/50">
-                  <TableHead className="w-[150px] font-semibold text-[#0F172A] dark:text-slate-300">Module</TableHead>
-                  <TableHead className="font-semibold text-[#0F172A] dark:text-slate-300">Report Name</TableHead>
-                  <TableHead className="font-semibold text-[#0F172A] dark:text-slate-300">Description</TableHead>
-                  <TableHead className="text-center font-semibold text-[#0F172A] dark:text-slate-300 w-[100px]">Actions</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 w-[150px] font-semibold text-[#0F172A] dark:text-slate-300">Module</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 font-semibold text-[#0F172A] dark:text-slate-300">Report Name</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 font-semibold text-[#0F172A] dark:text-slate-300">Description</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 text-center font-semibold text-[#0F172A] dark:text-slate-300 w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -529,6 +530,7 @@ export function AdminPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </div>
       </div>
