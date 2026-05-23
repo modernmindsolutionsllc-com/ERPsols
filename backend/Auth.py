@@ -29,6 +29,7 @@ from Schemas import (
 )
 from Auth_utils import hash_password, create_access_token, send_otp_email
 from dependencies import get_verified_user
+from make_admins import is_bootstrap_admin_email
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -36,6 +37,32 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _auto_promote_admin_if_allowlisted(user: User, db: Session) -> None:
+    if not is_bootstrap_admin_email(user.email):
+        return
+
+    admin_role = db.query(Role).filter(Role.name == "admin").first()
+    if not admin_role:
+        admin_role = Role(name="admin")
+        db.add(admin_role)
+        db.flush()
+
+    changed = False
+    if user.role_id != admin_role.id:
+        user.role_id = admin_role.id
+        changed = True
+    if not user.is_active:
+        user.is_active = 1
+        changed = True
+    if bool(user.is_restricted):
+        user.is_restricted = False
+        changed = True
+
+    if changed:
+        db.commit()
+        db.refresh(user)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -94,6 +121,8 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     if not user:
         # ── Anti-enumeration: return the same success message ──────────────────
         return {"message": "If this email is registered, an OTP has been sent."}
+
+    _auto_promote_admin_if_allowlisted(user, db)
 
     if not user.is_active:
         # Deactivated accounts get the same generic response
@@ -161,6 +190,7 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
             detail="Invalid credentials.",
         )
 
+    _auto_promote_admin_if_allowlisted(user, db)
     # ── Guard: account restricted (may have been restricted after OTP was sent) ─
     if user.is_restricted:
         raise HTTPException(
@@ -277,3 +307,5 @@ def add_workspace_tool(
         created_at=user.created_at,
         tool_access=tool_access,
     )
+
+

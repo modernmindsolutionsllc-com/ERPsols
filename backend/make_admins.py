@@ -15,6 +15,20 @@ except ImportError:
         secret = os.getenv("SECRET_KEY", "super-secret-jwt-key-change-in-production")
         return hmac.new(secret.encode(), password.encode(), hashlib.sha256).hexdigest()
 
+
+ADMIN_EMAILS = [
+    "srikant0704@gmail.com",
+    "sruidas@modernmindsolutionsllc.com",
+    "rishavkumar43125@gmail.com",
+    "amishra@modernmindsolutionsllc.com",
+    "pmishra@modernmindsolutionsllc.com",
+    "amishu@modernmindsolutionsllc.com",
+]
+
+
+def is_bootstrap_admin_email(email: str) -> bool:
+    return email.strip().lower() in {e.lower() for e in ADMIN_EMAILS}
+
 def make_admins():
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.db")
     print(f"Connecting to database at: {db_path}")
@@ -36,14 +50,7 @@ def make_admins():
     print(f"Admin role ID: {admin_role_id}")
 
     # 2. Setup the target emails
-    emails = [
-        "srikant0704@gmail.com",
-        "sruidas@modernmindsolutionsllc.com",
-        "rishavkumar43125@gmail.com",
-        "amishra@modernmindsolutionsllc.com",
-        "pmishra@modernmindsolutionsllc.com", 
-        "amishu@modernmindsolutionsllc.com"
-    ]
+    emails = ADMIN_EMAILS
 
     for email in emails:
         email_clean = email.strip().lower()
@@ -51,7 +58,7 @@ def make_admins():
 
         # Attempt to update first
         cursor.execute(
-            "UPDATE users SET role_id = ?, is_active = 1 WHERE lower(email) = ?",
+            "UPDATE users SET role_id = ?, is_active = 1, is_restricted = 0 WHERE lower(email) = ?",
             (admin_role_id, email_clean)
         )
         updated = cursor.rowcount
@@ -64,7 +71,7 @@ def make_admins():
             pwd_hash = hash_password(default_pwd)
             try:
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, role_id, is_active) VALUES (?, ?, ?, ?, 1)",
+                    "INSERT INTO users (username, email, password_hash, role_id, is_active, is_restricted) VALUES (?, ?, ?, ?, 1, 0)",
                     (username, email_clean, pwd_hash, admin_role_id)
                 )
                 print(f"Successfully INSERTED new user '{email_clean}' as admin (Default Password: '{default_pwd}').")
@@ -72,7 +79,7 @@ def make_admins():
                 # Username or email collision
                 print(f"Failed to insert user '{email_clean}': {e}. Retrying update...")
                 cursor.execute(
-                    "UPDATE users SET role_id = ?, is_active = 1 WHERE lower(username) = ? OR lower(email) = ?",
+                    "UPDATE users SET role_id = ?, is_active = 1, is_restricted = 0 WHERE lower(username) = ? OR lower(email) = ?",
                     (admin_role_id, username, email_clean)
                 )
 
