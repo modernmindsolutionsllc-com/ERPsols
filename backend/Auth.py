@@ -61,46 +61,63 @@ def _auto_promote_admin_if_allowlisted(user: User, db: Session) -> None:
         changed = True
 
     if changed:
-        db.commit()
-        db.refresh(user)
+        db.flush()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SIGNUP  (legacy — uses raw sqlite3, kept for backward compatibility)
+#  SIGNUP  (SQLAlchemy persistent transaction model)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-def signup(body: SignupRequest):
-    conn = get_connection()
+def signup(body: SignupRequest, db: Session = Depends(get_db)):
+    """
+    Register a new user account cleanly through SQLAlchemy ORM, ensuring
+    strict transaction boundary handling and database persistence.
+    """
+    # Check duplicate email or username
+    existing_user = db.query(User).filter(
+        (User.email == body.email) | (User.username == body.username)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email or username already registered."
+        )
+
+    # Resolve default role (user)
+    role = db.query(Role).filter(Role.name == "user").first()
+    if not role:
+        role = Role(name="user")
+        db.add(role)
+        db.flush()
+
+    # Create new user record
+    new_user = User(
+        username=body.username,
+        email=body.email,
+        password_hash=hash_password(body.password),
+        role_id=role.id,
+        is_active=1,
+        is_restricted=False,
+    )
+    db.add(new_user)
+
     try:
-        cur = conn.cursor()
+        db.commit()
+        db.refresh(new_user)
 
-        # Check duplicate email or username
-        cur.execute(
-            "SELECT id FROM users WHERE email = ? OR username = ?",
-            (body.email, body.username)
-        )
-        if cur.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email or username already registered."
-            )
+        # Check and promote if allowlisted admin email
+        _auto_promote_admin_if_allowlisted(new_user, db)
+        db.commit()
+        db.refresh(new_user)
 
-        # Resolve role_id from role name
-        cur.execute("SELECT id FROM roles WHERE name = ?", ("user",))
-        role_row = cur.fetchone()
-        if not role_row:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.")
-
-        # Insert user
-        cur.execute(
-            "INSERT INTO users (username, email, password_hash, role_id) VALUES (?, ?, ?, ?)",
-            (body.username, body.email, hash_password(body.password), role_row["id"])
-        )
-        conn.commit()
         return {"message": "Account created successfully."}
-    finally:
-        conn.close()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database transaction failure during signup: {exc}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
