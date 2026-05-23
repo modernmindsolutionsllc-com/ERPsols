@@ -46,12 +46,12 @@ export function LoginPage() {
     const result = await requestOtp(email.trim());
     setLoading(false);
 
-    if (result) {
+    if (result && !result.error) {
       setStep('otp');
       setOtpCode('');
       setDevOtp(result.devOtp ?? '');
     } else {
-      setError('Could not send the login code. Check the email and backend connection.');
+      setError(result?.error || 'Could not send the login code. Check the email and backend connection.');
     }
   };
 
@@ -120,13 +120,7 @@ export function LoginPage() {
             </p>
           </div>
 
-          <div className="grid max-w-xl grid-cols-3 gap-3">
-            {['JWT Auth', 'RBAC', 'Fernet Data'].map(item => (
-              <div key={item} className="rounded-md border border-[#E2E8F0] bg-white px-4 py-3">
-                <p className="text-xs font-medium text-[#0F172A]">{item}</p>
-              </div>
-            ))}
-          </div>
+          {/* UI badges completely removed for clean onboarding experience */}
         </section>
 
         <section className="flex items-center justify-center px-4 py-8 sm:px-6">

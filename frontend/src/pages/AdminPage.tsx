@@ -54,6 +54,7 @@ export function AdminPage() {
   const [isCreateReportOpen, setIsCreateReportOpen] = useState(false);
   const [reports, setReports] = useState<BipReportResponse[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportSearchQuery, setReportSearchQuery] = useState('');
   const { user: currentUser, refreshUser } = useAuth();
 
   const loadUsers = useCallback(async () => {
@@ -203,6 +204,15 @@ export function AdminPage() {
   }
 
   const myTools = DASHBOARD_TOOLS.filter(t => currentUser?.tool_access?.includes(t.key));
+
+  const filteredReportsList = reports.filter(report => {
+    const query = reportSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      report.report_name.toLowerCase().includes(query) ||
+      report.module.toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
@@ -477,6 +487,17 @@ export function AdminPage() {
           <FileSpreadsheet className="text-[#185FA5]" size={20} />
           Configured Oracle Reports
         </h2>
+
+        <div className="relative mb-4 max-w-md">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] dark:text-slate-500" />
+          <input
+            type="text"
+            value={reportSearchQuery}
+            onChange={e => setReportSearchQuery(e.target.value)}
+            placeholder="Search reports by name or module..."
+            className="h-10 w-full rounded-md border border-[#CBD5E1] dark:border-white/10 bg-white dark:bg-slate-900 pl-10 pr-3 text-sm text-[#0F172A] dark:text-slate-100 transition-all placeholder:text-[#94A3B8] dark:placeholder:text-slate-500 focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
+          />
+        </div>
         
         <div className="bg-white dark:bg-slate-900/80 border border-[#E2E8F0] dark:border-white/10 rounded-lg overflow-hidden shadow-sm">
           {reportsLoading ? (
@@ -484,17 +505,10 @@ export function AdminPage() {
               <Loader2 className="animate-spin mb-2" size={24} />
               <p>Loading reports...</p>
             </div>
-          ) : reports.length === 0 ? (
+          ) : filteredReportsList.length === 0 ? (
             <div className="p-8 text-center text-[#64748B] dark:text-slate-400">
               <FileSpreadsheet className="mx-auto mb-3 opacity-20" size={48} />
-              <p>No reports configured yet.</p>
-              <Button 
-                variant="link" 
-                onClick={() => setIsCreateReportOpen(true)}
-                className="mt-2 text-[#185FA5] p-0 h-auto"
-              >
-                Create your first report
-              </Button>
+              <p>No matching reports found.</p>
             </div>
           ) : (
             <div className="max-h-[45vh] overflow-auto">
@@ -508,7 +522,7 @@ export function AdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.map((report) => (
+                {filteredReportsList.map((report) => (
                   <TableRow key={report.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-800/30 border-[#E2E8F0] dark:border-white/10">
                     <TableCell className="font-medium">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#185FA51A] text-[#185FA5]">

@@ -100,17 +100,12 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
         is_active=1,
         is_restricted=False,
     )
-    db.add(new_user)
 
     try:
-        db.commit()
-        db.refresh(new_user)
-
-        # Check and promote if allowlisted admin email
+        db.add(new_user)
         _auto_promote_admin_if_allowlisted(new_user, db)
         db.commit()
         db.refresh(new_user)
-
         return {"message": "Account created successfully."}
     except Exception as exc:
         db.rollback()
@@ -136,8 +131,10 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
 
     if not user:
-        # ── Anti-enumeration: return the same success message ──────────────────
-        return {"message": "If this email is registered, an OTP has been sent."}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User needs to create an account first!",
+        )
 
     _auto_promote_admin_if_allowlisted(user, db)
 

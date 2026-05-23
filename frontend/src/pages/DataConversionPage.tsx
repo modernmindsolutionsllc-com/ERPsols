@@ -13,8 +13,9 @@ import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/co
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import {
   ArrowRightLeft, ShieldCheck, Layers, Cpu,
-  ArrowRight, ArrowLeft, Lock,
+  ArrowRight, ArrowLeft, Lock, UserPlus, CheckCircle2, Download
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  WELCOME BANNER
@@ -94,16 +95,41 @@ function ToolWelcomeBanner() {
 function ModuleGrid({ onSelect }: { onSelect: (mod: ModuleConfig) => void }) {
   return (
     <>
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
-          Select a Module
-        </h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Choose an Oracle HCM module to begin the data conversion process.
-        </p>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
+            Select a Module
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Choose an Oracle HCM module to begin the data conversion process.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <UserPlus size={15} />
+            Add user
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <CheckCircle2 size={15} />
+            Validate catalog
+          </Button>
+          <Button
+            variant="default"
+            className="gap-2 bg-[#185FA5] hover:bg-[#124A82] text-white"
+          >
+            <Download size={15} />
+            Download data templates
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         {DATA_LOADER_CONFIG.map((mod) => {
           const Icon = mod.icon;
           const isEmpty = mod.objects.length === 0;
@@ -112,7 +138,7 @@ function ModuleGrid({ onSelect }: { onSelect: (mod: ModuleConfig) => void }) {
               key={mod.key}
               onClick={() => !isEmpty && onSelect(mod)}
               disabled={isEmpty}
-              className={`group relative text-left rounded-xl overflow-hidden transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${
+              className={`group relative text-left rounded-xl overflow-hidden transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 w-full sm:w-[calc(50%-8px)] md:w-[calc(33.333%-12px)] lg:w-[calc(25%-12px)] min-w-[270px] max-w-[310px] ${
                 isEmpty
                   ? 'opacity-60 cursor-not-allowed'
                   : 'hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-black/20 hover:-translate-y-0.5'

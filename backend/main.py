@@ -32,7 +32,11 @@ app = FastAPI(
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # Support strict Vercel target in production and local development options in local dev
-allowed_origins = [frontend_url]
+allowed_origins = [
+    frontend_url,
+    "https://er-psols.vercel.app",
+    "https://erpsols.vercel.app",
+]
 if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
     allowed_origins.extend([
         "http://localhost:5173",

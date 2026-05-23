@@ -588,16 +588,6 @@ export function BIPReportingPage() {
                   {isCatalogRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
                   {isCatalogRunning ? 'Deploying...' : 'Deploy Catalog'}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleSyncOracleQueries}
-                  disabled={!oracleConnected || isCatalogRunning || !activeEnv}
-                  className="w-full lg:w-auto gap-2 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 h-9 text-xs font-semibold"
-                  size="sm"
-                >
-                  {isCatalogRunning && catalogOperation === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-                  {isCatalogRunning && catalogOperation === 'sync' ? 'Syncing...' : 'Sync Queries'}
-                </Button>
                 <p className="text-[10px] text-muted-foreground text-center">
                   {activeEnv ? `Targeting ${activeEnv.env_name}` : 'Connect to Oracle first'}
                 </p>
@@ -620,10 +610,34 @@ export function BIPReportingPage() {
               </div>
               <Button
                 variant="outline"
-                disabled={!lastWorkbook}
+                disabled={tableData.length === 0}
                 onClick={() => {
-                  if (!lastWorkbook || !lastWorkbookName) return;
-                  downloadWorkbook(lastWorkbook, lastWorkbookName);
+                  if (tableData.length === 0 || !lastWorkbookName) return;
+                  
+                  // Sanitize data: Strip out any keys, rows, or artifacts containing 'GO TO INDEX'
+                  const sanitizedData = tableData.map((row: any) => {
+                    if (!row || typeof row !== 'object') return row;
+                    const cleanRow: any = {};
+                    Object.keys(row).forEach(key => {
+                      if (key.trim().toUpperCase() !== 'GO TO INDEX') {
+                        cleanRow[key] = row[key];
+                      }
+                    });
+                    return cleanRow;
+                  }).filter((row: any) => {
+                    if (!row || typeof row !== 'object') return false;
+                    if (Object.keys(row).length === 0) return false;
+                    return !Object.values(row).some(val => 
+                      typeof val === 'string' && val.trim().toUpperCase() === 'GO TO INDEX'
+                    );
+                  });
+
+                  const ws = XLSX.utils.json_to_sheet(sanitizedData);
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "Query Output");
+                  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+                  downloadWorkbook(blob, lastWorkbookName);
                 }}
                 className="gap-2 text-sm font-medium border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
               >
