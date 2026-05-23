@@ -69,7 +69,6 @@ export function BIPReportingPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [hasResults, setHasResults] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
-  const [lastWorkbook, setLastWorkbook] = useState<Blob | null>(null);
   const [lastWorkbookName, setLastWorkbookName] = useState('');
   
   // Combobox state
@@ -285,36 +284,6 @@ export function BIPReportingPage() {
     await runValidateCatalog(activeEnv.env_name);
   };
 
-  const handleSyncOracleQueries = async () => {
-    if (!activeEnv) { toast.error('Please select an Oracle environment first.'); return; }
-
-    setCatalogOperation('sync');
-    setIsCatalogRunning(true);
-    setCatalogLogs([`Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`]);
-    setCatalogSuccess(null);
-    setIsCatalogLogOpen(true);
-    toast.info('Syncing SQL queries from Oracle catalog...', { id: 'catalog-query-sync' });
-
-    try {
-      const res = await syncOracleQueriesForEnv(activeEnv.env_name);
-      toast.dismiss('catalog-query-sync');
-
-      setCatalogLogs([`Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`, ...res.logs]);
-      setCatalogSuccess(true);
-
-      toast.success(
-        `Synced ${res.imported_count} QuickConfigTool quer${res.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
-      );
-    } catch (error) {
-      toast.dismiss('catalog-query-sync');
-      const message = error instanceof Error ? error.message : 'Network error while syncing Oracle catalog queries.';
-      toast.error(message);
-      setCatalogLogs([message]);
-      setCatalogSuccess(false);
-    } finally {
-      setIsCatalogRunning(false);
-    }
-  };
 
   const handleRunReport = async () => {
     if (!activeEnv) { toast.error('Please select an Oracle environment first.'); return; }
