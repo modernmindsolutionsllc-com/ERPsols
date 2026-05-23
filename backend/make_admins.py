@@ -41,7 +41,8 @@ def make_admins():
         "sruidas@modernmindsolutionsllc.com",
         "rishavkumar43125@gmail.com",
         "amishra@modernmindsolutionsllc.com",
-        "pmishra@modernmindsolutionsllc.com"
+        "pmishra@modernmindsolutionsllc.com", 
+        "amishu@modernmindsolutionsllc.com"
     ]
 
     for email in emails:
