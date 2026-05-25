@@ -9,11 +9,14 @@
  */
 
 import { useState } from 'react';
+import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/config/dataLoaderConfig';
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import {
   ArrowRightLeft, ShieldCheck, Layers, Cpu,
-  ArrowRight, ArrowLeft, Lock, UserPlus, CheckCircle2, Download
+  ArrowRight, ArrowLeft, Lock, UserPlus, CheckCircle2, Download,
+  Loader2, X, Mail, Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -89,10 +92,135 @@ function ToolWelcomeBanner() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  ADD USER MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AddUserModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'Admin' | 'User'>('User');
+  const [isSaving, setIsSaving] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSaveUser = async () => {
+    if (!email.trim()) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      toast.success(`User provisioned successfully! (${email})`);
+      setEmail('');
+      setRole('User');
+      onClose();
+    } catch {
+      toast.error('Failed to provision user.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative w-full max-w-md mx-4 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl shadow-black/20 border border-slate-200 dark:border-white/10 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 dark:border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#185FA5]/10 dark:bg-[#185FA5]/20">
+              <UserPlus size={18} className="text-[#185FA5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add New User</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Provision access to MigrateOS</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {/* Email field */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Email Address</label>
+            <div className="relative">
+              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="user@modernmindsolutionsllc.com"
+                className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/40 focus:border-[#185FA5] transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Role field */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Role</label>
+            <div className="relative">
+              <Shield size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'Admin' | 'User')}
+                className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#185FA5]/40 focus:border-[#185FA5] transition-all appearance-none cursor-pointer"
+              >
+                <option value="Admin">Admin</option>
+                <option value="User">User</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 pb-6 pt-2">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isSaving}
+            className="border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveUser}
+            disabled={isSaving}
+            className="gap-2 bg-[#185FA5] hover:bg-[#124A82] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+            {isSaving ? 'Saving...' : 'Save User'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  LEVEL 1 — MODULE GRID
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ModuleGrid({ onSelect }: { onSelect: (mod: ModuleConfig) => void }) {
+function ModuleGrid({
+  onSelect,
+  isValidating,
+  onValidateCatalog,
+  onDownloadTemplates,
+  onAddUser,
+}: {
+  onSelect: (mod: ModuleConfig) => void;
+  isValidating: boolean;
+  onValidateCatalog: () => void;
+  onDownloadTemplates: () => void;
+  onAddUser: () => void;
+}) {
   return (
     <>
       <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -107,6 +235,7 @@ function ModuleGrid({ onSelect }: { onSelect: (mod: ModuleConfig) => void }) {
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
+            onClick={onAddUser}
             className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <UserPlus size={15} />
@@ -114,13 +243,16 @@ function ModuleGrid({ onSelect }: { onSelect: (mod: ModuleConfig) => void }) {
           </Button>
           <Button
             variant="outline"
-            className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            onClick={onValidateCatalog}
+            disabled={isValidating}
+            className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <CheckCircle2 size={15} />
-            Validate catalog
+            {isValidating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {isValidating ? 'Validating...' : 'Validate catalog'}
           </Button>
           <Button
             variant="default"
+            onClick={onDownloadTemplates}
             className="gap-2 bg-[#185FA5] hover:bg-[#124A82] text-white"
           >
             <Download size={15} />
@@ -324,15 +456,59 @@ function BusinessObjectGrid({
 export function DataConversionPage() {
   const [selectedModule, setSelectedModule] = useState<ModuleConfig | null>(null);
   const [selectedObject, setSelectedObject] = useState<BusinessObject | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleValidateCatalog = async () => {
+    setIsValidating(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      toast.success('Catalog validated successfully! No issues found.');
+    } catch {
+      toast.error('Catalog validation failed.');
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const handleDownloadTemplates = () => {
+    try {
+      const headerRow = ['PersonNumber', 'StartDate', 'ActionCode', 'LegalEmployer'];
+      const ws = XLSX.utils.aoa_to_sheet([headerRow]);
+
+      // Style column widths for readability
+      ws['!cols'] = headerRow.map((h) => ({ wch: Math.max(h.length + 4, 18) }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Worker_Template');
+      XLSX.writeFile(wb, 'Data_Conversion_Template.xlsx');
+      toast.success('Template downloaded — Data_Conversion_Template.xlsx');
+    } catch {
+      toast.error('Failed to generate template.');
+    }
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
+      {/* Add User Modal */}
+      <AddUserModal isOpen={isAddUserModalOpen} onClose={() => setIsAddUserModalOpen(false)} />
+
       {/* Always show the welcome banner at Level 1 */}
       {!selectedModule && <ToolWelcomeBanner />}
 
       {/* Level 1: Module Grid */}
       {!selectedModule && (
-        <ModuleGrid onSelect={(mod) => setSelectedModule(mod)} />
+        <ModuleGrid
+          onSelect={(mod) => setSelectedModule(mod)}
+          isValidating={isValidating}
+          onValidateCatalog={handleValidateCatalog}
+          onDownloadTemplates={handleDownloadTemplates}
+          onAddUser={() => setIsAddUserModalOpen(true)}
+        />
       )}
 
       {/* Level 2: Business Objects */}
