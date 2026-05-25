@@ -189,13 +189,17 @@ def _run_single_sql(
         )
 
         df = csv_to_df(csv_data)
+        del csv_data
+        import gc
+        gc.collect()
+
         df = sanitize_df_for_storage(df)
 
         with lock:
             sheets[sheet_name] = df
 
         try:
-            del csv_data, df
+            del df
         except:
             pass
 

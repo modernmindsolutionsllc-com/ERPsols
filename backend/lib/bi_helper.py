@@ -1288,7 +1288,16 @@ def run_bi_sql_in_session(soap_url, session_token, report_path, template, sql_qu
         print(f"[ERROR] NO reportBytes IN RESPONSE: {resp_text[:500]}")
         raise ValueError(f"reportBytes not found in Oracle response. Report path: {report_path}")
 
-    decoded = base64.b64decode(rb.text).decode("utf-8-sig")
+    # Extract base64 text and immediately delete heavy XML tree to free memory!
+    b64_text = rb.text
+    del root, rb, resp, resp_text
+    import gc
+    gc.collect()
+
+    decoded = base64.b64decode(b64_text).decode("utf-8-sig")
+    del b64_text
+    gc.collect()
+
     print(f"[SUCCESS] ORACLE RETURNED DATA: {len(decoded)} chars, first 200: {decoded[:200]}")
     return decoded
 
