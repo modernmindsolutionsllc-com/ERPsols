@@ -4,14 +4,13 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
   BarChart3, Database, Download, FileSpreadsheet, Loader2, PlayCircle,
-  Server, Globe, Pencil, UserPlus, Users, Trash2, Key, ChevronDown,
-  Zap, Layers, Info, Check, ChevronsUpDown, CloudUpload, CheckCircle2, XCircle,
+  Layers, Info, Check, ChevronsUpDown, CloudUpload, CheckCircle2, XCircle,
 } from 'lucide-react';
 
 import { useAuth } from '@/context/AuthContext';
 import { usePermission, useToolAccess } from '@/hooks/usePermission';
 import {
-  bipReportingApi, type OracleStatus, type OracleSessionResponse, type BipReportResponse,
+  bipReportingApi, type BipReportResponse,
 } from '@/services/api';
 
 import { Card } from '@/components/ui/card';
@@ -202,7 +201,6 @@ export function BIPReportingPage() {
     oracleStatus,
     savedSessions,
     activeEnv,
-    setActiveEnv,
     handleSessionRefresh,
     handleDeleteAll,
     handleSwitchEnv,
