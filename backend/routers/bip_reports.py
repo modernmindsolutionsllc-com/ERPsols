@@ -11,10 +11,10 @@ import os
 from typing import List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.background import BackgroundTask
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from database import get_db, BipReportConfig, OracleCredential
 from dependencies import require_tool_access
