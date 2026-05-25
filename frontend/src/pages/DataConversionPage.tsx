@@ -13,13 +13,11 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/config/dataLoaderConfig';
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
-import { useAuth } from '@/context/AuthContext';
-import { authApi, adminApi } from '@/services/api';
-import type { ApiError } from '@/types';
+import { EnvSetupModal } from '@/components/shared/OracleSessionModals';
 import {
   ArrowRightLeft, ShieldCheck, Layers, Cpu,
   ArrowRight, ArrowLeft, Lock, UserPlus, CheckCircle2, Download,
-  Loader2, X, Mail, Shield
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -94,174 +92,6 @@ function ToolWelcomeBanner() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ADD USER MODAL
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function isApiError(res: unknown): res is ApiError {
-  return !!res && typeof res === 'object' && 'error' in res;
-}
-
-function AddUserModal({
-  isOpen,
-  onClose,
-  refreshUser,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  refreshUser: () => Promise<unknown>;
-}) {
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'Admin' | 'User'>('User');
-  const [isSaving, setIsSaving] = useState(false);
-
-  if (!isOpen) return null;
-
-  const handleSaveUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // ── Auto-trim & lowercase to prevent whitespace ghost bugs ────────────
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) {
-      toast.error('Please enter a valid email address.');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      // ── Step 1: Create user account via /auth/signup ─────────────────────
-      const signupRes = await authApi.signup({
-        username: cleanEmail.split('@')[0],
-        email: cleanEmail,
-        password: crypto.randomUUID(),   // Random secure password (user logs in via OTP)
-        role: 'user',
-      });
-
-      if (isApiError(signupRes)) {
-        toast.error(signupRes.error.message);
-        return;
-      }
-
-      // ── Step 2: Find newly created user & grant tool access ─────────────
-      const usersRes = await adminApi.getUsers(undefined, cleanEmail);
-
-      if (!isApiError(usersRes)) {
-        const newUser = usersRes.find((u) => u.email === cleanEmail);
-        if (newUser) {
-          // Determine base role mapping & tool_access grant
-          const mappedRole = role === 'Admin' ? 'enterprise' as const : 'user' as const;
-          const toolAccess = [...newUser.tool_access];
-          if (!toolAccess.includes('data_conversion')) {
-            toolAccess.push('data_conversion');
-          }
-
-          const updateRes = await adminApi.updateUser(newUser.id, {
-            role: mappedRole,
-            tool_access: toolAccess,
-          });
-
-          if (isApiError(updateRes)) {
-            // User was created but tool access failed — still report partial success
-            toast.warning(`User created but tool access failed: ${updateRes.error.message}`);
-          }
-        }
-      }
-
-      // ── Step 3: Success — refresh context, close modal, reset form ──────
-      toast.success(`User provisioned and granted Data Conversion access! (${cleanEmail})`);
-      setEmail('');
-      setRole('User');
-      onClose();
-      await refreshUser();
-    } catch {
-      toast.error('Failed to provision user.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <form onSubmit={handleSaveUser} className="relative w-full max-w-md mx-4 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl shadow-black/20 border border-slate-200 dark:border-white/10 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 dark:border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#185FA5]/10 dark:bg-[#185FA5]/20">
-              <UserPlus size={18} className="text-[#185FA5]" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add New User</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Provision access to MigrateOS</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5 space-y-4">
-          {/* Email field */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Email Address</label>
-            <div className="relative">
-              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="user@modernmindsolutionsllc.com"
-                className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/40 focus:border-[#185FA5] transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Role field */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Role</label>
-            <div className="relative">
-              <Shield size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'Admin' | 'User')}
-                className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#185FA5]/40 focus:border-[#185FA5] transition-all appearance-none cursor-pointer"
-              >
-                <option value="Admin">Admin</option>
-                <option value="User">User</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 pb-6 pt-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={isSaving}
-            className="border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={isSaving}
-            className="gap-2 bg-[#185FA5] hover:bg-[#124A82] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
-            {isSaving ? 'Saving...' : 'Save User'}
-          </Button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  LEVEL 1 — MODULE GRID
@@ -272,13 +102,13 @@ function ModuleGrid({
   isValidating,
   onValidateCatalog,
   onDownloadTemplates,
-  onAddUser,
+  onAddOracleEnv,
 }: {
   onSelect: (mod: ModuleConfig) => void;
   isValidating: boolean;
   onValidateCatalog: () => void;
   onDownloadTemplates: () => void;
-  onAddUser: () => void;
+  onAddOracleEnv: () => void;
 }) {
   return (
     <>
@@ -294,7 +124,7 @@ function ModuleGrid({
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
-            onClick={onAddUser}
+            onClick={onAddOracleEnv}
             className="gap-2 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <UserPlus size={15} />
@@ -513,11 +343,10 @@ function BusinessObjectGrid({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function DataConversionPage() {
-  const { refreshUser } = useAuth();
   const [selectedModule, setSelectedModule] = useState<ModuleConfig | null>(null);
   const [selectedObject, setSelectedObject] = useState<BusinessObject | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [isEnvModalOpen, setIsEnvModalOpen] = useState(false);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -554,11 +383,11 @@ export function DataConversionPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
-      {/* Add User Modal */}
-      <AddUserModal
-        isOpen={isAddUserModalOpen}
-        onClose={() => setIsAddUserModalOpen(false)}
-        refreshUser={refreshUser}
+      {/* Oracle Environment Setup Modal */}
+      <EnvSetupModal
+        open={isEnvModalOpen}
+        onOpenChange={setIsEnvModalOpen}
+        onSuccess={() => toast.success('Oracle Environment saved successfully!')}
       />
 
       {/* Always show the welcome banner at Level 1 */}
@@ -571,7 +400,7 @@ export function DataConversionPage() {
           isValidating={isValidating}
           onValidateCatalog={handleValidateCatalog}
           onDownloadTemplates={handleDownloadTemplates}
-          onAddUser={() => setIsAddUserModalOpen(true)}
+          onAddOracleEnv={() => setIsEnvModalOpen(true)}
         />
       )}
 
