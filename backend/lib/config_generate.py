@@ -42,11 +42,6 @@ def _create_formats(workbook: xlsxwriter.Workbook) -> dict[str, xlsxwriter.forma
         ),
         "cell": workbook.add_format({"border": 1, "valign": "top"}),
         "title": workbook.add_format({"bold": True, "font_size": 14}),
-        "link": workbook.add_format({"font_color": "blue", "underline": True}),
-        "module_header": workbook.add_format({"bold": True, "font_size": 11}),
-        "go_index": workbook.add_format(
-            {"bold": True, "font_color": "blue", "underline": True}
-        ),
         "error": workbook.add_format({"border": 1, "font_color": "red"}),
     }
 
@@ -72,62 +67,17 @@ def _build_sheet_plan(
     return plan
 
 
-def _write_index_sheet(
-    workbook: xlsxwriter.Workbook,
-    sheet_plan: list[dict[str, str]],
-    formats: dict[str, xlsxwriter.format.Format],
-) -> str:
-    index_name = "Index"
-    index_ws = workbook.add_worksheet(index_name)
-    index_ws.write(0, 0, "Configuration Workbook - Index", formats["title"])
-
-    row = 2
-    current_module = None
-    sequence = 1
-
-    for entry in sheet_plan:
-        module = entry["module"]
-        if module != current_module:
-            current_module = module
-            sequence = 1
-            index_ws.write(row, 0, f"Module: {module}", formats["module_header"])
-            row += 1
-
-        index_ws.write(row, 0, sequence)
-        index_ws.write_url(
-            row,
-            1,
-            f"internal:'{entry['sheet_name']}'!A1",
-            formats["link"],
-            string=entry["report_name"],
-        )
-        sequence += 1
-        row += 1
-
-    index_ws.set_column(0, 0, 10)
-    index_ws.set_column(1, 1, 40)
-    return index_name
-
-
 def _write_csv_sheet(
     workbook: xlsxwriter.Workbook,
     entry: dict[str, str],
     csv_bytes: bytes | None,
-    index_name: str,
     formats: dict[str, xlsxwriter.format.Format],
     error_message: str | None = None,
 ) -> None:
     worksheet = workbook.add_worksheet(entry["sheet_name"])
-    worksheet.write_url(
-        0,
-        0,
-        f"internal:'{index_name}'!A1",
-        formats["go_index"],
-        string="Go to Index",
-    )
-    worksheet.write(1, 0, entry["report_name"], formats["title"])
+    worksheet.write(0, 0, entry["report_name"], formats["title"])
 
-    data_row = 3
+    data_row = 2
     if error_message:
         worksheet.write(data_row, 0, f"Execution failed: {error_message}", formats["error"])
         worksheet.set_column(0, 0, min(max(len(error_message) + 18, 30), 80))
@@ -191,7 +141,6 @@ def run_sqls_config_generation(
 
     workbook = xlsxwriter.Workbook(temp_path, {"constant_memory": True})
     formats = _create_formats(workbook)
-    index_name = _write_index_sheet(workbook, sheet_plan, formats)
 
     session_token = None
     http_session = None
@@ -224,7 +173,7 @@ def run_sqls_config_generation(
                     entry["sql_query"],
                     http_session=http_session,
                 )
-                _write_csv_sheet(workbook, entry, csv_bytes, index_name, formats)
+                _write_csv_sheet(workbook, entry, csv_bytes, formats)
                 generated_count += 1
             except Exception as exc:
                 user_msg = friendly_bi_error(exc)
@@ -233,7 +182,6 @@ def run_sqls_config_generation(
                     workbook,
                     entry,
                     None,
-                    index_name,
                     formats,
                     error_message=user_msg,
                 )
