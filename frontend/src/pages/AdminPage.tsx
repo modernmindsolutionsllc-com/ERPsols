@@ -461,15 +461,15 @@ export function AdminPage() {
                                 Restrict
                               </button>
                             )}
-                            <button
-                              onClick={() => handleDeleteUser(u)}
-                              disabled={deleting === u.id || u.role === 'admin'}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[#450A0A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                              title={u.role === 'admin' ? 'Admin accounts cannot be deleted here' : 'Delete user'}
-                            >
-                              {deleting === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                              Delete
-                            </button>
+                             <button
+                               onClick={() => handleDeleteUser(u)}
+                               disabled={deleting === u.id}
+                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[#450A0A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                               title="Delete user"
+                             >
+                               {deleting === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                               Delete
+                             </button>
                           </div>
                         )}
                       </td>

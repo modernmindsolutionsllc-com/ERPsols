@@ -13,7 +13,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from database import get_db, User, Role, UserToolAccess
+from database import (
+    get_db,
+    User,
+    Role,
+    UserToolAccess,
+    ConfigSnapshot,
+    PayrollRecord,
+    OracleCredential,
+)
 from dependencies import TOOL_CATALOG, require_admin
 from Schemas import (
     AdminUserUpdateRequest,
@@ -174,7 +182,7 @@ def delete_user(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
-    """Delete an existing non-admin user from the Admin Control Panel."""
+    """Delete an existing user (including admins) from the Admin Control Panel."""
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
@@ -192,12 +200,34 @@ def delete_user(
 
     role_name = user.role_rel.name if user.role_rel else "unknown"
     if role_name == "admin":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admin accounts cannot be deleted from this panel.",
-        )
+        admin_role = db.query(Role).filter(Role.name == "admin").first()
+        if admin_role:
+            remaining_admins = (
+                db.query(User).filter(User.role_id == admin_role.id).count()
+            )
+            if remaining_admins <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You cannot delete the last remaining admin account.",
+                )
 
     username = user.username
+
+    # Ensure dependent rows are removed first to avoid FK constraint issues.
+    db.query(UserToolAccess).filter(UserToolAccess.user_id == user.id).delete(
+        synchronize_session="fetch"
+    )
+    db.query(ConfigSnapshot).filter(ConfigSnapshot.user_id == user.id).delete(
+        synchronize_session="fetch"
+    )
+    db.query(PayrollRecord).filter(PayrollRecord.user_id == user.id).delete(
+        synchronize_session="fetch"
+    )
+    db.query(OracleCredential).filter(OracleCredential.user_id == user.id).delete(
+        synchronize_session="fetch"
+    )
+    db.flush()
+
     db.delete(user)
     db.commit()
 
