@@ -386,7 +386,6 @@ export function AdminPage() {
               <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
                 {users.map(u => {
                   const isSelf = currentUser?.id === String(u.id);
-                  const roleColor = ROLE_COLORS[u.role] || '#64748B';
 
                   return (
                     <tr key={u.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-900/70 transition-colors">
@@ -552,7 +551,9 @@ export function AdminPage() {
                     <TableCell className="text-[#64748B] dark:text-slate-400 text-sm">{report.description || '-'}</TableCell>
                     <TableCell className="text-center">
                       {report.report_name.includes("Dynamic SQL Executor DM") ? (
-                        <Lock className="w-4 h-4 text-gray-400 cursor-not-allowed mx-auto" title="System Report - Cannot be deleted" />
+                        <span title="System Report - Cannot be deleted" className="inline-block mx-auto">
+                          <Lock className="w-4 h-4 text-gray-400 cursor-not-allowed" />
+                        </span>
                       ) : (
                         <button
                           onClick={() => handleDeleteReport(report.id, report.report_name)}
