@@ -35,11 +35,7 @@ function isApiError(res: unknown): res is ApiError {
   return typeof res === 'object' && res !== null && 'error' in res;
 }
 
-const ROLE_COLORS: Record<string, string> = {
-  admin: '#6B3FA0',
-  enterprise: '#185FA5',
-  user: '#0F6E56',
-};
+
 
 export function AdminPage() {
   const [users, setUsers] = useState<ACPUser[]>([]);
