@@ -156,11 +156,12 @@ def update_user(
         )
 
     if body.role is not None:
-        role = db.query(Role).filter(Role.name == body.role).first()
+        role_name = body.role.lower().strip()
+        role = db.query(Role).filter(Role.name == role_name).first()
         if not role:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid role.",
+                detail=f"Role '{body.role}' not found in the roles table.",
             )
         user.role_id = role.id
 

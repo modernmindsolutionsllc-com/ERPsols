@@ -390,13 +390,12 @@ export function AdminPage() {
                       <td className="px-4 py-3 text-sm text-[#334155] dark:text-slate-300">{u.username}</td>
                       <td className="px-4 py-3">
                         <select
-                          value={u.role}
+                          value={u.role === 'admin' ? 'enterprise' : u.role}
                           disabled={updatingRoleFor === String(u.id)}
                           onChange={(e) => handleRoleChange(String(u.id), e.target.value)}
                           className="text-xs font-semibold rounded-md border border-gray-300 px-2 py-1 bg-white focus:ring-[#185FA5] outline-none transition-colors"
                         >
-                          <option value="admin">Admin</option>
-                          <option value="enterprise">Enterprise</option>
+                          <option value="enterprise">Admin</option>
                           <option value="user">User</option>
                         </select>
                       </td>

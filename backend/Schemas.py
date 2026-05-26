@@ -136,7 +136,7 @@ class ToolAccessResponse(BaseModel):
 
 
 class AdminUserUpdateRequest(BaseModel):
-    role: Optional[AssignableRole] = None
+    role: Optional[str] = None
     tool_access: Optional[list[ToolKey]] = None
     is_restricted: Optional[bool] = None
 
