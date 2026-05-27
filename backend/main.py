@@ -29,26 +29,29 @@ app = FastAPI(
     description="Enterprise Resource Planning – Micro-service Backend",
 )
 
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").strip().rstrip("/")
+configured_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
-# Support strict Vercel target in production and local development options in local dev
-allowed_origins = [
+# Keep the explicit production URLs, local dev URLs, and a configurable list.
+allowed_origins = list(dict.fromkeys([
     frontend_url,
+    *configured_origins,
     "https://er-psols.vercel.app",
     "https://erpsols.vercel.app",
-]
-if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
-    allowed_origins.extend([
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ])
-allowed_origins = list(dict.fromkeys(allowed_origins))
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

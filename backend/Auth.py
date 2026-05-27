@@ -131,10 +131,7 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User needs to create an account first!",
-        )
+        return {"message": "If this email is registered, an OTP has been sent."}
 
     _auto_promote_admin_if_allowlisted(user, db)
 
@@ -174,6 +171,11 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         if _env_flag("EXPOSE_DEV_OTP"):
             response["dev_otp"] = otp_code
         return response
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send OTP email. Please try again later.",
+        ) from exc
 
     return {"message": "If this email is registered, an OTP has been sent."}
 
