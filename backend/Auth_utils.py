@@ -80,10 +80,53 @@ def require_role(*allowed_roles: str):
 
 def send_otp_email(user_email: str, otp_code: str) -> None:
     """
+<<<<<<< Updated upstream
     Send a 6-digit OTP login code over SMTP.
     """
     text_body, html_body = _build_otp_email_bodies(otp_code)
 
+=======
+    Send a 6-digit OTP login code.
+
+    Prefers Brevo's HTTPS REST API when BREVO_API_KEY is configured (works on free Render
+    instances). Falls back to Resend API or Gmail SMTP for local/alternative setups.
+    """
+    text_body, html_body = _build_otp_email_bodies(otp_code)
+
+    brevo_api_key = os.environ.get("BREVO_API_KEY")
+    if brevo_api_key:
+        from_email = os.environ.get("SMTP_FROM_EMAIL") or os.environ.get("SENDER_EMAIL")
+        if not from_email:
+            raise RuntimeError(
+                "SMTP_FROM_EMAIL or SENDER_EMAIL must be set in environment."
+            )
+        success = _send_brevo_email(
+            api_key=brevo_api_key,
+            from_email=from_email,
+            user_email=user_email,
+            html_body=html_body,
+        )
+        if not success:
+            raise RuntimeError("Failed to send OTP email via Brevo REST API.")
+        return
+
+    resend_api_key = os.environ.get("RESEND_API_KEY")
+    if resend_api_key:
+        from_email = os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("SENDER_EMAIL")
+        if not from_email:
+            raise RuntimeError(
+                "RESEND_FROM_EMAIL or SENDER_EMAIL must be set in environment."
+            )
+        _send_resend_email(
+            resend_api_key=resend_api_key,
+            from_email=from_email,
+            user_email=user_email,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        return
+
+>>>>>>> Stashed changes
     sender_email = os.environ.get("SENDER_EMAIL")
     sender_password = os.environ.get("SENDER_EMAIL_PASSWORD")
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
@@ -190,6 +233,82 @@ def _build_otp_email_bodies(otp_code: str) -> tuple[str, str]:
     """
     return text_body, html_body
 
+<<<<<<< Updated upstream
+=======
+
+def _send_brevo_email(
+    api_key: str,
+    from_email: str,
+    user_email: str,
+    html_body: str,
+) -> bool:
+    """
+    Send an email via Brevo's HTTP REST API.
+    Returns True on a 200 or 201 status code; logs the error and returns False otherwise.
+    """
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+
+    payload = {
+        "sender": {"name": "MigrateOS Admin", "email": from_email},
+        "to": [{"email": user_email}],
+        "subject": "Your MigrateOS Secure OTP",
+        "htmlContent": html_body,
+    }
+
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+        if response.status_code in (200, 201):
+            return True
+        else:
+            logger.error(f"Brevo API error: {response.status_code} - {response.text}")
+            return False
+    except Exception as exc:
+        logger.error(f"Brevo API connection error: {exc}")
+        return False
+
+
+def _send_resend_email(
+    resend_api_key: str,
+    from_email: str,
+    user_email: str,
+    text_body: str,
+    html_body: str,
+) -> None:
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": from_email,
+                "to": [user_email],
+                "subject": "MMSLLC Secure Admin Portal - Login Code",
+                "text": text_body,
+                "html": html_body,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        details = exc.response.text if exc.response is not None else str(exc)
+        raise RuntimeError(f"Failed to send OTP email via Resend: {details}") from exc
+
+
+>>>>>>> Stashed changes
 def _send_smtp_email(
     smtp_host: str,
     smtp_port: int,
@@ -214,3 +333,4 @@ def _send_smtp_email(
             server.ehlo()
         server.login(sender_email, sender_password)
         server.sendmail(sender_email, user_email, message)
+
