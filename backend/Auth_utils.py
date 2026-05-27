@@ -1,8 +1,8 @@
 """
 Auth_utils.py
-─────────────
+-------------
 Security utilities: JWT management, password hashing, OTP email delivery,
-and FastAPI dependency injection for authentication & RBAC.
+and FastAPI dependency injection for authentication and RBAC.
 """
 
 import hashlib
@@ -15,6 +15,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import jwt
+import requests
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
@@ -26,11 +27,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/verify-otp")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  PASSWORD HASHING  (kept for signup / legacy compat)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Password hashing
 def hash_password(password: str) -> str:
     """Create an HMAC-SHA256 password hash."""
     return hmac.new(SECRET_KEY.encode(), password.encode(), hashlib.sha256).hexdigest()
@@ -40,11 +36,6 @@ def verify_password(plain: str, hashed: str) -> bool:
     return hmac.compare_digest(hash_password(plain), hashed)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  JWT HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# JWT helpers
 def create_access_token(data: dict) -> str:
     payload = data.copy()
     payload["exp"] = datetime.now(timezone.utc) + timedelta(
@@ -72,12 +63,10 @@ def decode_access_token(token: str) -> dict:
         raise credentials_exception from exc
 
 
-# Current user dependency
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     return decode_access_token(token)
 
 
-# Role guard factory
 def require_role(*allowed_roles: str):
     def role_checker(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") not in allowed_roles:
@@ -90,17 +79,31 @@ def require_role(*allowed_roles: str):
     return role_checker
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  OTP EMAIL DELIVERY
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def send_otp_email(user_email: str, otp_code: str) -> None:
     """
-    Send a 6-digit OTP login code to the user via Gmail SMTP (SSL, port 465).
+    Send a 6-digit OTP login code.
 
-    Reads SENDER_EMAIL and SENDER_EMAIL_PASSWORD from environment variables.
-    Raises RuntimeError if credentials are missing or delivery fails.
+    Prefers an HTTPS email API when RESEND_API_KEY is configured, which works on
+    free Render instances. Falls back to Gmail SMTP for local or paid setups.
     """
+    text_body, html_body = _build_otp_email_bodies(otp_code)
+
+    resend_api_key = os.environ.get("RESEND_API_KEY")
+    if resend_api_key:
+        from_email = os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("SENDER_EMAIL")
+        if not from_email:
+            raise RuntimeError(
+                "RESEND_FROM_EMAIL or SENDER_EMAIL must be set in environment."
+            )
+        _send_resend_email(
+            resend_api_key=resend_api_key,
+            from_email=from_email,
+            user_email=user_email,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        return
+
     sender_email = os.environ.get("SENDER_EMAIL")
     sender_password = os.environ.get("SENDER_EMAIL_PASSWORD")
 
@@ -109,27 +112,45 @@ def send_otp_email(user_email: str, otp_code: str) -> None:
             "SENDER_EMAIL and SENDER_EMAIL_PASSWORD must be set in environment."
         )
 
-    # ── Build the email ────────────────────────────────────────────────────────
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "MMSLLC Secure Admin Portal - Login Code"
     msg["From"] = sender_email
     msg["To"] = user_email
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
 
-    # Plain-text fallback
+    context = ssl.create_default_context()
+
+    try:
+        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), context)
+    except ssl.SSLCertVerificationError as exc:
+        if os.environ.get("SMTP_ALLOW_INSECURE_TLS", "").lower() not in {"1", "true", "yes"}:
+            raise RuntimeError("SMTP TLS certificate verification failed.") from exc
+
+        insecure_context = ssl._create_unverified_context()
+        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), insecure_context)
+    except smtplib.SMTPAuthenticationError as exc:
+        raise RuntimeError(
+            "SMTP authentication failed. Check SENDER_EMAIL and SENDER_EMAIL_PASSWORD."
+        ) from exc
+    except smtplib.SMTPException as exc:
+        raise RuntimeError(f"Failed to send OTP email: {exc}") from exc
+
+
+def _build_otp_email_bodies(otp_code: str) -> tuple[str, str]:
     text_body = (
         f"Your MMSLLC login code is: {otp_code}\n\n"
         f"This code expires in 5 minutes.\n"
         f"If you did not request this, please ignore this email."
     )
 
-    # HTML version (premium look)
     html_body = f"""\
     <html>
     <body style="font-family: 'Segoe UI', Arial, sans-serif; background: #0f0f0f; padding: 40px;">
       <div style="max-width: 480px; margin: 0 auto; background: #1a1a2e; border-radius: 12px;
                   padding: 40px; border: 1px solid #2a2a4a;">
         <h2 style="color: #e0e0e0; margin: 0 0 8px 0; font-size: 18px;">
-          🔐 MMSLLC Secure Portal
+          MMSLLC Secure Portal
         </h2>
         <p style="color: #8888aa; font-size: 14px; margin: 0 0 30px 0;">
           Your one-time login code
@@ -147,33 +168,42 @@ def send_otp_email(user_email: str, otp_code: str) -> None:
         <hr style="border: none; border-top: 1px solid #2a2a4a; margin: 24px 0;" />
         <p style="color: #555577; font-size: 11px; margin: 0; text-align: center;">
           If you did not request this code, please ignore this email.
-          <br/>© MMSLLC — Modern Mind Solutions LLC
+          <br/>MMSLLC - Modern Mind Solutions LLC
         </p>
       </div>
     </body>
     </html>
     """
+    return text_body, html_body
 
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
 
-    # ── Send via Gmail SMTP over SSL ───────────────────────────────────────────
-    context = ssl.create_default_context()
-
+def _send_resend_email(
+    resend_api_key: str,
+    from_email: str,
+    user_email: str,
+    text_body: str,
+    html_body: str,
+) -> None:
     try:
-        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), context)
-    except ssl.SSLCertVerificationError as exc:
-        if os.environ.get("SMTP_ALLOW_INSECURE_TLS", "").lower() not in {"1", "true", "yes"}:
-            raise RuntimeError("SMTP TLS certificate verification failed.") from exc
-
-        insecure_context = ssl._create_unverified_context()
-        _send_smtp_email(sender_email, sender_password, user_email, msg.as_string(), insecure_context)
-    except smtplib.SMTPAuthenticationError as exc:
-        raise RuntimeError(
-            "SMTP authentication failed. Check SENDER_EMAIL and SENDER_EMAIL_PASSWORD."
-        ) from exc
-    except smtplib.SMTPException as exc:
-        raise RuntimeError(f"Failed to send OTP email: {exc}") from exc
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": from_email,
+                "to": [user_email],
+                "subject": "MMSLLC Secure Admin Portal - Login Code",
+                "text": text_body,
+                "html": html_body,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        details = exc.response.text if exc.response is not None else str(exc)
+        raise RuntimeError(f"Failed to send OTP email via Resend: {details}") from exc
 
 
 def _send_smtp_email(
