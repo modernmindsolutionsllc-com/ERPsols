@@ -77,6 +77,7 @@ class MessageResponse(BaseModel):
 
 class OTPRequestResponse(MessageResponse):
     dev_otp: Optional[str] = None
+    bypass_login: bool = False
 
 
 

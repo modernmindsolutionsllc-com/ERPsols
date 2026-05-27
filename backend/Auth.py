@@ -154,6 +154,13 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     db.commit()
 
+    if _env_flag("OTP_BYPASS_EXISTING_USERS"):
+        return {
+            "message": "Temporary login bypass is active for this account.",
+            "dev_otp": otp_code,
+            "bypass_login": True,
+        }
+
     # ── Send the OTP via email ─────────────────────────────────────────────────
     try:
         send_otp_email(user.email, otp_code)
@@ -170,7 +177,7 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         }
         if _env_flag("EXPOSE_DEV_OTP"):
             response["dev_otp"] = otp_code
-        return response
+        return {**response, "bypass_login": False}
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

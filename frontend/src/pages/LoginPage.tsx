@@ -44,13 +44,28 @@ export function LoginPage() {
     setDevOtp('');
     setLoading(true);
     const result = await requestOtp(email.trim());
-    setLoading(false);
 
     if (result && !result.error) {
+      if (result.bypassLogin && result.devOtp) {
+        const verified = await verifyOtp(email.trim(), result.devOtp);
+        setLoading(false);
+
+        if (verified) {
+          const destination = verified.user.role === 'admin' ? '/admin' : '/dashboard';
+          navigate(destination);
+          return;
+        }
+
+        setError('Temporary bypass was enabled, but automatic sign-in did not complete.');
+        return;
+      }
+
+      setLoading(false);
       setStep('otp');
       setOtpCode('');
       setDevOtp(result.devOtp ?? '');
     } else {
+      setLoading(false);
       setError(result?.error || 'Could not send the login code. Check the email and backend connection.');
     }
   };

@@ -4,7 +4,7 @@ import { authApi } from '@/services/api';
 import { toast } from 'sonner';
 
 interface AuthContextType extends AuthState {
-  requestOtp: (email: string) => Promise<{ message: string; devOtp?: string; error?: string } | null>;
+  requestOtp: (email: string) => Promise<{ message: string; devOtp?: string; bypassLogin?: boolean; error?: string } | null>;
   verifyOtp: (email: string, otpCode: string) => Promise<{ token: string; user: User } | null>;
   refreshUser: () => Promise<User | null>;
   signup: (payload: SignupPayload) => Promise<boolean>;
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [state.isAuthenticated]);
 
-  const requestOtp = useCallback(async (email: string): Promise<{ message: string; devOtp?: string; error?: string } | null> => {
+  const requestOtp = useCallback(async (email: string): Promise<{ message: string; devOtp?: string; bypassLogin?: boolean; error?: string } | null> => {
     const result = await authApi.requestOtp(email);
     if ('error' in result) {
       if (result.error.message === 'ACCOUNT_RESTRICTED') {
@@ -95,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {
       message: result.message,
       devOtp: result.dev_otp,
+      bypassLogin: result.bypass_login,
     };
   }, []);
 

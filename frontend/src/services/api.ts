@@ -287,7 +287,7 @@ export const authApi = {
     });
   },
 
-  async requestOtp(email: string): Promise<{ message: string; dev_otp?: string } | ApiError> {
+  async requestOtp(email: string): Promise<{ message: string; dev_otp?: string; bypass_login?: boolean } | ApiError> {
     return requestJson('/auth/request-otp', {
       method: 'POST',
       body: JSON.stringify({ email }),
