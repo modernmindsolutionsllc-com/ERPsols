@@ -8,20 +8,24 @@
  *   Level 3 — UniversalETLScreen (both set)
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/config/dataLoaderConfig';
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import { useOracleSessions } from '@/hooks/useOracleSessions';
 import { OracleSessionSelector } from '@/components/shared/OracleSessionSelector';
-import { type OracleStatus, type OracleSessionResponse } from '@/services/api';
+import { bipReportingApi, type OracleStatus, type OracleSessionResponse } from '@/services/api';
 import {
   ArrowRightLeft, ShieldCheck, Layers, Cpu,
   ArrowRight, ArrowLeft, Lock, CheckCircle2, Download,
-  Loader2
+  Loader2, XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  WELCOME BANNER
@@ -354,10 +358,97 @@ function BusinessObjectGrid({
 //  MAIN PAGE — STATE MACHINE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const ORACLE_VALIDATE_SOURCE_FOLDER = '/QuickConfigTool';
+
+function isApiError(v: unknown): v is { error: { message: string } } {
+  return typeof v === 'object' && v !== null && 'error' in v;
+}
+
 export function DataConversionPage() {
   const [selectedModule, setSelectedModule] = useState<ModuleConfig | null>(null);
   const [selectedObject, setSelectedObject] = useState<BusinessObject | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
+
+  // Catalog validation/deployment state
+  const [isCatalogRunning, setIsCatalogRunning] = useState(false);
+  const [catalogLogs, setCatalogLogs] = useState<string[]>([]);
+  const [catalogSuccess, setCatalogSuccess] = useState<boolean | null>(null);
+  const [isCatalogLogOpen, setIsCatalogLogOpen] = useState(false);
+  const [catalogOperation, setCatalogOperation] = useState<'deploy' | 'sync'>('deploy');
+
+  const syncOracleQueriesForEnv = useCallback(async (envName: string) => {
+    const res = await bipReportingApi.importOracleCatalogQueries(
+      envName,
+      ORACLE_VALIDATE_SOURCE_FOLDER,
+    );
+
+    if (isApiError(res)) {
+      throw new Error(res.error.message || 'Oracle query sync failed.');
+    }
+    return res;
+  }, []);
+
+  const runValidateCatalog = useCallback(async (envName: string) => {
+    setCatalogOperation('deploy');
+    setIsCatalogRunning(true);
+    setCatalogLogs([]);
+    setCatalogSuccess(null);
+    setIsCatalogLogOpen(true);
+    toast.info('Deploying catalog to Oracle...', { id: 'catalog-deploy' });
+
+    try {
+      const res = await bipReportingApi.validateCatalog(envName);
+      toast.dismiss('catalog-deploy');
+      if (isApiError(res)) {
+        toast.error(res.error.message || 'Catalog deployment failed.');
+        setCatalogLogs([res.error.message || 'Unknown error']);
+        setCatalogSuccess(false);
+      } else {
+        setCatalogLogs(res.logs);
+        setCatalogSuccess(res.success);
+        if (res.success) {
+          toast.success('Catalog deployed successfully!');
+          try {
+            setCatalogLogs(current => [
+              ...current,
+              '',
+              '===== Query Sync =====',
+              `Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`,
+              'Syncing QuickConfigTool SQL definitions into SQLite...',
+            ]);
+            const syncRes = await syncOracleQueriesForEnv(envName);
+            setCatalogLogs(current => [
+              ...current,
+              ...syncRes.logs,
+              `Synced ${syncRes.imported_count} QuickConfigTool quer${syncRes.imported_count === 1 ? 'y' : 'ies'} into SQLite.`,
+            ]);
+            toast.success(
+              `Synced ${syncRes.imported_count} QuickConfigTool quer${syncRes.imported_count === 1 ? 'y' : 'ies'}.`,
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Oracle query sync failed.';
+            setCatalogLogs(current => [
+              ...current,
+              '',
+              '===== Query Sync =====',
+              `Source: ${ORACLE_VALIDATE_SOURCE_FOLDER}`,
+              `Sync failed: ${message}`,
+            ]);
+            setCatalogSuccess(false);
+            toast.warning(message);
+          }
+        } else {
+          toast.warning('Catalog deployment completed with issues.');
+        }
+      }
+    } catch {
+      toast.dismiss('catalog-deploy');
+      toast.error('Network error during catalog deployment.');
+      setCatalogLogs(['Network error: Could not reach the backend.']);
+      setCatalogSuccess(false);
+    } finally {
+      setIsCatalogRunning(false);
+    }
+  }, [syncOracleQueriesForEnv]);
 
   const {
     oracleStatus,
@@ -366,20 +457,18 @@ export function DataConversionPage() {
     handleSessionRefresh,
     handleDeleteAll,
     handleSwitchEnv,
-  } = useOracleSessions();
+  } = useOracleSessions(async (newActiveEnvName) => {
+    await runValidateCatalog(newActiveEnvName);
+  });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleValidateCatalog = async () => {
-    setIsValidating(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      toast.success('Catalog validated successfully! No issues found.');
-    } catch {
-      toast.error('Catalog validation failed.');
-    } finally {
-      setIsValidating(false);
+    if (!activeEnv) {
+      toast.error('Please select an Oracle environment first.');
+      return;
     }
+    await runValidateCatalog(activeEnv.env_name);
   };
 
   const handleDownloadTemplates = () => {
@@ -410,7 +499,7 @@ export function DataConversionPage() {
       {!selectedModule && (
         <ModuleGrid
           onSelect={(mod) => setSelectedModule(mod)}
-          isValidating={isValidating}
+          isValidating={isCatalogRunning}
           onValidateCatalog={handleValidateCatalog}
           onDownloadTemplates={handleDownloadTemplates}
           activeEnv={activeEnv}
@@ -439,6 +528,62 @@ export function DataConversionPage() {
           onBack={() => setSelectedObject(null)}
         />
       )}
+
+      {/* ══════ CATALOG DEPLOYMENT LOG DIALOG ══════ */}
+      <Dialog open={isCatalogLogOpen} onOpenChange={setIsCatalogLogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <div className="mx-auto size-12 rounded-full flex items-center justify-center mb-2" style={{ background: catalogSuccess === null ? 'rgba(59,130,246,0.1)' : catalogSuccess ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)' }}>
+              {catalogSuccess === null ? (
+                <Loader2 className="animate-spin text-blue-500" size={22} />
+              ) : catalogSuccess ? (
+                <CheckCircle2 className="text-emerald-500" size={22} />
+              ) : (
+                <XCircle className="text-red-500" size={22} />
+              )}
+            </div>
+            <DialogTitle className="text-center text-lg">
+              {catalogSuccess === null
+                ? catalogOperation === 'sync' ? 'Syncing Catalog Queries...' : 'Deploying Catalog...'
+                : catalogSuccess
+                  ? catalogOperation === 'sync' ? 'Queries Synced' : 'Catalog Deployed'
+                  : catalogOperation === 'sync' ? 'Sync Issues' : 'Deployment Issues'}
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              {activeEnv ? `Target: ${activeEnv.env_name}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto mt-3 rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0A0F1E] p-4 font-mono text-xs leading-relaxed space-y-1 max-h-[400px]">
+            {catalogLogs.length === 0 ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="animate-spin" size={14} />
+                Waiting for deployment logs...
+              </div>
+            ) : (
+              catalogLogs.map((log, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'py-0.5',
+                    log.startsWith('✅') && 'text-emerald-600 dark:text-emerald-400',
+                    log.startsWith('❌') && 'text-red-500 dark:text-red-400',
+                    log.startsWith('⬆️') && 'text-blue-600 dark:text-blue-400',
+                    log.startsWith('📁') && 'text-amber-600 dark:text-amber-400',
+                    log.startsWith('🔥') && 'text-red-600 dark:text-red-400 font-bold',
+                    log.startsWith('🎉') && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                    log.startsWith('⚙️') && 'text-gray-500 dark:text-slate-400',
+                    log.startsWith('⏳') && 'text-gray-400 dark:text-slate-500',
+                    log.includes('Summary') && 'text-white dark:text-white font-bold border-t border-gray-300 dark:border-white/10 pt-2 mt-2',
+                  )}
+                >
+                  {log}
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
