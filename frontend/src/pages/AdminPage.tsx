@@ -220,6 +220,13 @@ export function AdminPage() {
   const myTools = DASHBOARD_TOOLS.filter(t => currentUser?.tool_access?.includes(t.key));
 
   const filteredReportsList = reports.filter(report => {
+    // Hide system/catalog-imported reports (only show custom reports added via 'Save SQL Report')
+    if (
+      report.module === 'Validate Catalog' ||
+      (report.description || '').toLowerCase().includes('imported from oracle catalog')
+    ) {
+      return false;
+    }
     const query = reportSearchQuery.toLowerCase().trim();
     if (!query) return true;
     return (
