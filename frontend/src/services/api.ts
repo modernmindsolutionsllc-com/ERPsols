@@ -600,6 +600,13 @@ export interface BipReportCreate {
   sql_query: string;
 }
 
+export interface BipReportUpdate {
+  module: string;
+  sub_module?: string;
+  report_name: string;
+  description?: string;
+}
+
 export interface BipReportResponse {
   id: number;
   module: string;
@@ -719,6 +726,11 @@ export const bipReportingApi = {
       body: JSON.stringify(data),
     }),
   getBipReports: () => authenticatedJson<BipReportResponse[]>('/api/v1/bip-reports/'),
+  updateBipReport: (reportId: number, data: BipReportUpdate) =>
+    authenticatedJson<BipReportResponse>(`/api/v1/bip-reports/${reportId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   deleteBipReport: (reportId: number) =>
     authenticatedDelete(`/api/v1/bip-reports/${reportId}`),
 

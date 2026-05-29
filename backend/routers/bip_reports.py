@@ -21,6 +21,7 @@ from dependencies import require_tool_access
 from Schemas import (
     BipReportCreate,
     BipReportResponse,
+    BipReportUpdate,
     DirectBipSqlRequest,
     ExecuteReportsRequest,
     OracleCatalogImportRequest,
@@ -175,6 +176,51 @@ def list_bip_reports(
 ):
     """List all stored BIP report configurations."""
     return db.query(BipReportConfig).all()
+
+
+@router.put("/{report_id}", response_model=BipReportResponse, status_code=status.HTTP_200_OK)
+def update_bip_report(
+    report_id: int,
+    report_in: BipReportUpdate,
+    current_user: dict = Depends(require_tool_access("bip_reporting")),
+    db: Session = Depends(get_db)
+):
+    """Update report metadata only; SQL text remains unchanged."""
+    report = db.query(BipReportConfig).filter(BipReportConfig.id == report_id).first()
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"BIP Report configuration with ID {report_id} not found."
+        )
+
+    report_name = report_in.report_name.strip()
+    duplicate = (
+        db.query(BipReportConfig)
+        .filter(BipReportConfig.report_name == report_name, BipReportConfig.id != report_id)
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A report configuration with this name already exists.",
+        )
+
+    report.module = report_in.module
+    report.sub_module = report_in.sub_module
+    report.report_name = report_name
+    report.description = report_in.description
+    report.is_active = True
+
+    try:
+        db.commit()
+        db.refresh(report)
+        return report
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A report configuration with this name already exists.",
+        )
 
 
 @router.delete("/{report_id}", status_code=status.HTTP_200_OK)

@@ -306,6 +306,28 @@ class BipReportCreate(BaseModel):
         return v
 
 
+class BipReportUpdate(BaseModel):
+    module: str
+    sub_module: Optional[str] = None
+    report_name: str
+    description: Optional[str] = None
+
+    @field_validator("module", "report_name")
+    @classmethod
+    def required_text_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("This field cannot be empty.")
+        return v.strip()
+
+    @field_validator("module")
+    @classmethod
+    def validate_module_value(cls, v: str) -> str:
+        allowed = ["Core HR", "Payroll", "Benefits", "Talent", "Absence", "OTL", "Setup"]
+        if v not in allowed:
+            raise ValueError(f"Module must be one of: {', '.join(allowed)}")
+        return v
+
+
 class BipReportResponse(BipReportBase):
     id: int
     is_active: bool

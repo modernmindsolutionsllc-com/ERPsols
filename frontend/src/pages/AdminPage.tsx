@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import type { ACPUser, AdminTool, ApiError, ToolKey } from '@/types';
 import {
   Search, Users, ShieldAlert, ShieldCheck, Clock, Filter, Loader2, RefreshCw,
-  KeyRound, Trash2, ArrowRight, PlusCircle, FileSpreadsheet, Lock,
+  KeyRound, Trash2, ArrowRight, PlusCircle, FileSpreadsheet, Lock, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,6 +49,7 @@ export function AdminPage() {
   const [deleting, setDeleting] = useState<number | null>(null);
   const [isCreateReportOpen, setIsCreateReportOpen] = useState(false);
   const [reports, setReports] = useState<BipReportResponse[]>([]);
+  const [editingReport, setEditingReport] = useState<BipReportResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportSearchQuery, setReportSearchQuery] = useState('');
   const { user: currentUser, refreshUser } = useAuth();
@@ -537,7 +538,7 @@ export function AdminPage() {
                   <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 w-[150px] font-semibold text-[#0F172A] dark:text-slate-300">Module</TableHead>
                   <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 font-semibold text-[#0F172A] dark:text-slate-300">Report Name</TableHead>
                   <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 font-semibold text-[#0F172A] dark:text-slate-300">Description</TableHead>
-                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 text-center font-semibold text-[#0F172A] dark:text-slate-300 w-[100px]">Actions</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-[#F8FAFC] dark:bg-slate-800/50 text-center font-semibold text-[#0F172A] dark:text-slate-300 w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -552,17 +553,26 @@ export function AdminPage() {
                     <TableCell className="text-[#64748B] dark:text-slate-400 text-sm">{report.description || '-'}</TableCell>
                     <TableCell className="text-center">
                       {report.report_name.includes("Dynamic SQL Executor DM") ? (
-                        <span title="System Report - Cannot be deleted" className="inline-block mx-auto">
+                        <span title="System Report - Cannot be edited or deleted" className="inline-block mx-auto">
                           <Lock className="w-4 h-4 text-gray-400 cursor-not-allowed" />
                         </span>
                       ) : (
-                        <button
-                          onClick={() => handleDeleteReport(report.id, report.report_name)}
-                          className="inline-flex items-center justify-center p-1.5 rounded-md border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[#450A0A] transition-colors"
-                          title="Delete report configuration"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setEditingReport(report)}
+                            className="inline-flex items-center justify-center p-1.5 rounded-md border border-[#185FA5]/30 text-[#185FA5] hover:bg-[#EFF6FF] dark:hover:bg-[#0F172A] transition-colors"
+                            title="Edit report configuration"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteReport(report.id, report.report_name)}
+                            className="inline-flex items-center justify-center p-1.5 rounded-md border border-[#DC2626]/30 text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[#450A0A] transition-colors"
+                            title="Delete report configuration"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -578,6 +588,21 @@ export function AdminPage() {
         open={isCreateReportOpen}
         onOpenChange={setIsCreateReportOpen}
         onSuccess={() => { 
+          void loadReports();
+        }}
+      />
+
+      <CreateBipReportModal
+        open={editingReport !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingReport(null);
+          }
+        }}
+        mode="edit"
+        initialReport={editingReport}
+        onSuccess={() => {
+          setEditingReport(null);
           void loadReports();
         }}
       />

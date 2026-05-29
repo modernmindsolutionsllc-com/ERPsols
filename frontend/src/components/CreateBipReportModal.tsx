@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,26 +16,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, PlusCircle } from 'lucide-react';
+import { Loader2, Pencil, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { bipReportingApi, hasError } from '@/services/api';
+import { bipReportingApi, hasError, type BipReportResponse } from '@/services/api';
 
 interface CreateBipReportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  mode?: 'create' | 'edit';
+  initialReport?: Pick<BipReportResponse, 'id' | 'module' | 'sub_module' | 'report_name' | 'description'> | null;
 }
 
-export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBipReportModalProps) {
+const DEFAULT_MODULE = 'Core HR';
+const DEFAULT_REPORT_NAME = 'Sample_Test_Report';
+const DEFAULT_SQL = 'select 1 from dual';
+
+export function CreateBipReportModal({
+  open,
+  onOpenChange,
+  onSuccess,
+  mode = 'create',
+  initialReport = null,
+}: CreateBipReportModalProps) {
   const [module, setModule] = useState('Core HR');
   const [reportName, setReportName] = useState('Sample_Test_Report');
   const [description, setDescription] = useState('');
   const [sqlQuery, setSqlQuery] = useState('select 1 from dual');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isEditMode = mode === 'edit';
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (isEditMode && initialReport) {
+      setModule(initialReport.module);
+      setReportName(initialReport.report_name);
+      setDescription(initialReport.description ?? '');
+      setSqlQuery(DEFAULT_SQL);
+      return;
+    }
+
+    setModule(DEFAULT_MODULE);
+    setReportName(DEFAULT_REPORT_NAME);
+    setDescription('');
+    setSqlQuery(DEFAULT_SQL);
+  }, [initialReport, isEditMode, open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!module || !reportName.trim() || !sqlQuery.trim()) {
+    if (!module || !reportName.trim() || (!isEditMode && !sqlQuery.trim())) {
       toast.error('Please fill in all fields.');
       return;
     }
@@ -43,26 +75,32 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
     setIsSubmitting(true);
 
     try {
-      const response = await bipReportingApi.createBipReport({
-        module,
-        report_name: reportName,
-        description: description.trim() || undefined,
-        sql_query: sqlQuery,
-      });
+      const response = isEditMode && initialReport
+        ? await bipReportingApi.updateBipReport(initialReport.id, {
+            module,
+            sub_module: initialReport.sub_module ?? undefined,
+            report_name: reportName,
+            description: description.trim() || undefined,
+          })
+        : await bipReportingApi.createBipReport({
+            module,
+            report_name: reportName,
+            description: description.trim() || undefined,
+            sql_query: sqlQuery,
+          });
 
       if (hasError(response)) {
         toast.error(response.error.message || 'Failed to save BIP report configuration.');
       } else {
-        toast.success('Report Added Successfully');
+        toast.success(isEditMode ? 'Report updated successfully.' : 'Report added successfully.');
         if (onSuccess) onSuccess();
         onOpenChange(false);
-        // Reset form to defaults
-        setModule('Core HR');
-        setReportName('Sample_Test_Report');
+        setModule(DEFAULT_MODULE);
+        setReportName(DEFAULT_REPORT_NAME);
         setDescription('');
-        setSqlQuery('select 1 from dual');
+        setSqlQuery(DEFAULT_SQL);
       }
-    } catch (error) {
+    } catch {
       toast.error('An unexpected error occurred.');
     } finally {
       setIsSubmitting(false);
@@ -74,8 +112,8 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <PlusCircle className="text-[#185FA5]" size={24} />
-            Add BIP Report Configuration
+            {isEditMode ? <Pencil className="text-[#185FA5]" size={24} /> : <PlusCircle className="text-[#185FA5]" size={24} />}
+            {isEditMode ? 'Edit BIP Report Configuration' : 'Add BIP Report Configuration'}
           </DialogTitle>
         </DialogHeader>
 
@@ -120,17 +158,23 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="sql-query">SQL Query</Label>
-            <Textarea
-              id="sql-query"
-              placeholder="SELECT * FROM..."
-              value={sqlQuery}
-              onChange={(e) => setSqlQuery(e.target.value)}
-              disabled={isSubmitting}
-              className="font-mono text-sm min-h-[200px]"
-            />
-          </div>
+          {isEditMode ? (
+            <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-sm text-[#475569]">
+              SQL query is locked for existing reports and cannot be edited here.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="sql-query">SQL Query</Label>
+              <Textarea
+                id="sql-query"
+                placeholder="SELECT * FROM..."
+                value={sqlQuery}
+                onChange={(e) => setSqlQuery(e.target.value)}
+                disabled={isSubmitting}
+                className="font-mono text-sm min-h-[200px]"
+              />
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button
@@ -149,10 +193,10 @@ export function CreateBipReportModal({ open, onOpenChange, onSuccess }: CreateBi
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {isEditMode ? 'Updating...' : 'Saving...'}
                 </>
               ) : (
-                'Save Report'
+                isEditMode ? 'Update Report' : 'Save Report'
               )}
             </Button>
           </div>
