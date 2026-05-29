@@ -16,7 +16,6 @@ from datetime import datetime
 class SignupRequest(BaseModel):
     username: str
     email: EmailStr
-    password: str
     role: Literal["user"] = "user"
 
     @field_validator("username")
@@ -25,13 +24,6 @@ class SignupRequest(BaseModel):
         if len(v.strip()) < 3:
             raise ValueError("Username must be at least 3 characters.")
         return v.strip()
-
-    @field_validator("password")
-    @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters.")
-        return v
 
 
 class LoginRequest(BaseModel):

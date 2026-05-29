@@ -95,7 +95,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     new_user = User(
         username=body.username,
         email=body.email,
-        password_hash=hash_password(body.password),
+        password_hash="OTP_ONLY",
         role_id=role.id,
         is_active=1,
         is_restricted=False,
@@ -131,7 +131,10 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
 
     if not user:
-        return {"message": "If this email is registered, an OTP has been sent."}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found. Please sign up first!"
+        )
 
     _auto_promote_admin_if_allowlisted(user, db)
 

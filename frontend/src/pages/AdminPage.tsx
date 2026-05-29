@@ -290,6 +290,8 @@ export function AdminPage() {
     );
   });
 
+  const sortedUsers = [...users].sort((a, b) => a.id - b.id);
+
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in duration-250">
       <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -457,7 +459,7 @@ export function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0] dark:divide-white/10">
-                {users.map(u => {
+                {sortedUsers.map(u => {
                   const isSelf = currentUser?.id === String(u.id);
 
                   return (

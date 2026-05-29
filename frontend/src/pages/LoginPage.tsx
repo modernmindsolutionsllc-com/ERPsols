@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { SignupPayload } from '@/types';
+import { toast } from 'sonner';
 import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
   KeyRound,
   Loader2,
-  Lock,
   Mail,
   ShieldCheck,
   User,
@@ -21,7 +21,6 @@ type SignInStep = 'email' | 'otp';
 const emptySignup: SignupPayload = {
   username: '',
   email: '',
-  password: '',
   role: 'user', // SECURITY: Public signup is always 'user' — admin/enterprise assigned internally
 };
 
@@ -43,30 +42,39 @@ export function LoginPage() {
     setError('');
     setDevOtp('');
     setLoading(true);
-    const result = await requestOtp(email.trim());
+    try {
+      const result = await requestOtp(email.trim());
 
-    if (result && !result.error) {
-      if (result.bypassLogin && result.devOtp) {
-        const verified = await verifyOtp(email.trim(), result.devOtp);
-        setLoading(false);
+      if (result && !result.error) {
+        if (result.bypassLogin && result.devOtp) {
+          const verified = await verifyOtp(email.trim(), result.devOtp);
+          setLoading(false);
 
-        if (verified) {
-          const destination = verified.user.role === 'admin' ? '/admin' : '/dashboard';
-          navigate(destination);
+          if (verified) {
+            const destination = verified.user.role === 'admin' ? '/admin' : '/dashboard';
+            navigate(destination);
+            return;
+          }
+
+          setError('Temporary bypass was enabled, but automatic sign-in did not complete.');
           return;
         }
 
-        setError('Temporary bypass was enabled, but automatic sign-in did not complete.');
-        return;
+        setLoading(false);
+        setStep('otp');
+        setOtpCode('');
+        setDevOtp(result.devOtp ?? '');
+      } else {
+        setLoading(false);
+        const errMsg = result?.error || 'Could not send the login code. Check the email and backend connection.';
+        setError(errMsg);
+        toast.error(errMsg);
       }
-
+    } catch (err: any) {
       setLoading(false);
-      setStep('otp');
-      setOtpCode('');
-      setDevOtp(result.devOtp ?? '');
-    } else {
-      setLoading(false);
-      setError(result?.error || 'Could not send the login code. Check the email and backend connection.');
+      const errMsg = err?.message || 'An unexpected error occurred.';
+      setError(errMsg);
+      toast.error(errMsg);
     }
   };
 
@@ -110,8 +118,8 @@ export function LoginPage() {
   return (
     <main className="min-h-screen bg-[#F3F4F6]">
       <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 lg:grid-cols-[1fr_460px]">
-        <section className="hidden flex-col justify-between px-10 py-10 lg:flex">
-          <div className="flex items-center gap-3">
+        <section className="relative hidden flex-col justify-center px-10 py-10 lg:flex">
+          <div className="absolute top-10 left-10 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#185FA5] text-white">
               <ShieldCheck size={20} />
             </div>
@@ -291,22 +299,6 @@ export function LoginPage() {
                       value={signupForm.email}
                       onChange={event => setSignupForm(current => ({ ...current, email: event.target.value }))}
                       placeholder="you@company.com"
-                      className="h-10 w-full rounded-md border border-[#CBD5E1] bg-white pl-10 pr-3 text-sm text-[#0F172A] transition-all placeholder:text-[#94A3B8] focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
-                      required
-                    />
-                  </span>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-medium text-[#0F172A]">Password</span>
-                  <span className="relative block">
-                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                    <input
-                      type="password"
-                      minLength={8}
-                      value={signupForm.password}
-                      onChange={event => setSignupForm(current => ({ ...current, password: event.target.value }))}
-                      placeholder="Minimum 8 characters"
                       className="h-10 w-full rounded-md border border-[#CBD5E1] bg-white pl-10 pr-3 text-sm text-[#0F172A] transition-all placeholder:text-[#94A3B8] focus:border-[#185FA5] focus:outline-none focus:ring-4 focus:ring-[#185FA5]/15"
                       required
                     />
