@@ -82,10 +82,23 @@ export function BIPReportingPage() {
     }
   }, []);
 
+  const allowedReports = useMemo(() => {
+    return reports.filter(report => {
+      const desc = (report.description || '').toLowerCase();
+      if (
+        report.module === 'Validate Catalog' ||
+        desc.includes('imported from oracle catalog')
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
     const term = reportSearch.trim().toLowerCase();
-    if (!term) return reports;
-    return reports.filter(report => {
+    if (!term) return allowedReports;
+    return allowedReports.filter(report => {
       const haystack = [
         report.module,
         report.sub_module || '',
@@ -94,7 +107,7 @@ export function BIPReportingPage() {
       ].join(' ').toLowerCase();
       return haystack.includes(term);
     });
-  }, [reports, reportSearch]);
+  }, [allowedReports, reportSearch]);
 
   const syncOracleQueriesForEnv = useCallback(async (envName: string) => {
     const res = await bipReportingApi.importOracleCatalogQueries(
@@ -350,7 +363,7 @@ export function BIPReportingPage() {
                         onValueChange={setReportSearch}
                       />
                       <CommandList className="max-h-[300px] overflow-y-auto">
-                        {reports.length === 0 ? (
+                        {allowedReports.length === 0 ? (
                           <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                             No saved SQL reports found. Add one from Admin, then reopen this list.
                           </div>
