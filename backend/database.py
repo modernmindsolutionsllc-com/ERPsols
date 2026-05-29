@@ -232,6 +232,16 @@ class BiCatalogSetupData(Base):
     bi_object_base64_data = Column(Text, nullable=False)
 
 
+class DataTemplate(Base):
+    __tablename__ = "data_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    module_name = Column(String, nullable=False)
+    business_object = Column(String, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 # ── DB Session ─────────────────────────────────────────────────────────────────
 
 def get_db():

@@ -782,4 +782,30 @@ export const bipReportingApi = {
       `/api/v1/integrations/oracle/sessions/${encodeURIComponent(envName)}/validate-catalog`,
       { method: 'POST' },
     ),
+
+  downloadDataTemplate: async (module: string, businessObject: string): Promise<Blob> => {
+    let token: string | null = null;
+    try {
+      const saved = sessionStorage.getItem('migrateos_auth');
+      if (saved) token = JSON.parse(saved).token;
+    } catch { /* ignore */ }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/templates/download?module=${encodeURIComponent(module)}&object=${encodeURIComponent(businessObject)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errDetail = await response.json().catch(() => ({}));
+      throw new Error(errDetail?.detail || 'Failed to download template.');
+    }
+
+    return await response.blob();
+  },
 };
+

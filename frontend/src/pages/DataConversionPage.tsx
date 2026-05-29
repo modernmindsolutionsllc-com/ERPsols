@@ -10,7 +10,6 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
 import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/config/dataLoaderConfig';
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import { useOracleSessions } from '@/hooks/useOracleSessions';
@@ -471,20 +470,29 @@ export function DataConversionPage() {
     await runValidateCatalog(activeEnv.env_name);
   };
 
-  const handleDownloadTemplates = () => {
+  const handleDownloadTemplates = async () => {
     try {
-      const headerRow = ['PersonNumber', 'StartDate', 'ActionCode', 'LegalEmployer'];
-      const ws = XLSX.utils.aoa_to_sheet([headerRow]);
+      const moduleName = selectedModule?.label || 'CORE HR';
+      const objectName = selectedObject?.label || 'Worker';
 
-      // Style column widths for readability
-      ws['!cols'] = headerRow.map((h) => ({ wch: Math.max(h.length + 4, 18) }));
+      toast.loading('Fetching template from database...', { id: 'download-template' });
+      const blob = await bipReportingApi.downloadDataTemplate(moduleName, objectName);
+      toast.dismiss('download-template');
 
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Worker_Template');
-      XLSX.writeFile(wb, 'Data_Conversion_Template.xlsx');
-      toast.success('Template downloaded — Data_Conversion_Template.xlsx');
-    } catch {
-      toast.error('Failed to generate template.');
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const filename = `${objectName.replace(/\s+/g, '_')}_Template.xlsx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Template downloaded — ${filename}`);
+    } catch (error: any) {
+      toast.dismiss('download-template');
+      toast.error(error.message || 'Failed to download template.');
     }
   };
 

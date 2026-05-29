@@ -23,6 +23,7 @@ from routers import admin
 from routers import tracking
 from routers import integrations
 from routers import bip_reports
+from routers import templates
 app = FastAPI(
     title="ERPsols API",
     version="1.0.0",
@@ -102,6 +103,9 @@ app.include_router(integrations.router)
 
 # BIP Reports Configuration
 app.include_router(bip_reports.router)
+
+# Data Templates micro-service (enterprise + admin only)
+app.include_router(templates.router)
 
 
 # ── Health Check ───────────────────────────────────────────────────────────────
