@@ -632,6 +632,13 @@ export interface OracleCatalogImportResponse {
   reports: BipReportResponse[];
 }
 
+export interface TemplateMeta {
+  id: number;
+  module_name: string;
+  business_object: string;
+  file_name: string;
+}
+
 export interface OracleStatus {
   connected: boolean;
   oracle_url?: string;
@@ -782,6 +789,9 @@ export const bipReportingApi = {
       `/api/v1/integrations/oracle/sessions/${encodeURIComponent(envName)}/validate-catalog`,
       { method: 'POST' },
     ),
+
+  getAvailableTemplates: () =>
+    authenticatedJson<TemplateMeta[]>('/api/v1/templates/'),
 
   downloadDataTemplate: async (module: string, businessObject: string): Promise<Blob> => {
     let token: string | null = null;

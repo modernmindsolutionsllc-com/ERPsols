@@ -23,6 +23,35 @@ router = APIRouter(
     dependencies=[Depends(require_tool_access("data_conversion"))],
 )
 
+# ── GET / ──────────────────────────────────────────────────────────────────────
+
+@router.get("/")
+def list_templates(db: Session = Depends(get_db)):
+    """
+    Return lightweight metadata for every stored template.
+    Deliberately excludes the file_data (BYTEA) column to avoid
+    sending megabytes of binary data to the browser.
+    """
+    rows = (
+        db.query(
+            DataTemplate.id,
+            DataTemplate.module_name,
+            DataTemplate.business_object,
+            DataTemplate.file_name,
+        )
+        .order_by(DataTemplate.module_name, DataTemplate.business_object)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "module_name": r.module_name,
+            "business_object": r.business_object,
+            "file_name": r.file_name,
+        }
+        for r in rows
+    ]
+
 
 # ── GET /download ──────────────────────────────────────────────────────────────
 

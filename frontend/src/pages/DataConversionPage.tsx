@@ -14,11 +14,11 @@ import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/co
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import { useOracleSessions } from '@/hooks/useOracleSessions';
 import { OracleSessionSelector } from '@/components/shared/OracleSessionSelector';
-import { bipReportingApi, type OracleStatus, type OracleSessionResponse } from '@/services/api';
+import { bipReportingApi, type OracleStatus, type OracleSessionResponse, type TemplateMeta } from '@/services/api';
 import {
   ArrowRightLeft, ShieldCheck, Layers, Cpu,
   ArrowRight, ArrowLeft, Lock, CheckCircle2, Download,
-  Loader2, XCircle
+  Loader2, XCircle, FileSpreadsheet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -374,6 +374,13 @@ export function DataConversionPage() {
   const [isCatalogLogOpen, setIsCatalogLogOpen] = useState(false);
   const [catalogOperation, setCatalogOperation] = useState<'deploy' | 'sync'>('deploy');
 
+  // Template picker modal state
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [availableTemplates, setAvailableTemplates] = useState<TemplateMeta[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateMeta | null>(null);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+
   const syncOracleQueriesForEnv = useCallback(async (envName: string) => {
     const res = await bipReportingApi.importOracleCatalogQueries(
       envName,
@@ -470,29 +477,51 @@ export function DataConversionPage() {
     await runValidateCatalog(activeEnv.env_name);
   };
 
-  const handleDownloadTemplates = async () => {
+  const handleOpenTemplatePicker = async () => {
+    setIsLoadingTemplates(true);
+    setSelectedTemplate(null);
+    setIsTemplateModalOpen(true);
     try {
-      const moduleName = selectedModule?.label || 'CORE HR';
-      const objectName = selectedObject?.label || 'Worker';
+      const res = await bipReportingApi.getAvailableTemplates();
+      if (isApiError(res)) {
+        toast.error(res.error.message || 'Failed to load templates.');
+        setAvailableTemplates([]);
+      } else {
+        setAvailableTemplates(res);
+      }
+    } catch {
+      toast.error('Network error while fetching templates.');
+      setAvailableTemplates([]);
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
 
-      toast.loading('Fetching template from database...', { id: 'download-template' });
-      const blob = await bipReportingApi.downloadDataTemplate(moduleName, objectName);
-      toast.dismiss('download-template');
-
+  const handleDownloadSelectedTemplate = async () => {
+    if (!selectedTemplate) {
+      toast.error('Please select a template first.');
+      return;
+    }
+    setIsDownloadingTemplate(true);
+    try {
+      const blob = await bipReportingApi.downloadDataTemplate(
+        selectedTemplate.module_name,
+        selectedTemplate.business_object,
+      );
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      const filename = `${objectName.replace(/\s+/g, '_')}_Template.xlsx`;
-      link.setAttribute('download', filename);
+      link.setAttribute('download', selectedTemplate.file_name);
       document.body.appendChild(link);
       link.click();
-      
       link.remove();
       window.URL.revokeObjectURL(url);
-      toast.success(`Template downloaded — ${filename}`);
+      toast.success(`Template downloaded — ${selectedTemplate.file_name}`);
+      setIsTemplateModalOpen(false);
     } catch (error: any) {
-      toast.dismiss('download-template');
       toast.error(error.message || 'Failed to download template.');
+    } finally {
+      setIsDownloadingTemplate(false);
     }
   };
 
@@ -509,7 +538,7 @@ export function DataConversionPage() {
           onSelect={(mod) => setSelectedModule(mod)}
           isValidating={isCatalogRunning}
           onValidateCatalog={handleValidateCatalog}
-          onDownloadTemplates={handleDownloadTemplates}
+          onDownloadTemplates={handleOpenTemplatePicker}
           activeEnv={activeEnv}
           savedSessions={savedSessions}
           oracleStatus={oracleStatus}
@@ -590,6 +619,99 @@ export function DataConversionPage() {
               ))
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════ TEMPLATE PICKER DIALOG ══════ */}
+      <Dialog open={isTemplateModalOpen} onOpenChange={setIsTemplateModalOpen}>
+        <DialogContent className="sm:max-w-[560px] max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <div className="mx-auto size-12 rounded-full flex items-center justify-center mb-2 bg-[#185FA5]/10">
+              <Download className="text-[#185FA5]" size={22} />
+            </div>
+            <DialogTitle className="text-center text-lg">Download Data Template</DialogTitle>
+            <DialogDescription className="text-center">
+              Select a template to download from the database.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto mt-3 max-h-[400px]">
+            {isLoadingTemplates ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 size={28} className="animate-spin text-[#185FA5]" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading templates...</p>
+              </div>
+            ) : availableTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-400 dark:text-slate-500">
+                <FileSpreadsheet size={40} strokeWidth={1} className="opacity-40" />
+                <p className="text-sm">No templates found in the database.</p>
+                <p className="text-xs">Upload a template from the Admin Panel first.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {availableTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTemplate(t)}
+                    className={cn(
+                      'w-full text-left rounded-lg border p-4 transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[#185FA5]/50',
+                      selectedTemplate?.id === t.id
+                        ? 'border-[#185FA5] bg-[#185FA5]/5 dark:bg-[#185FA5]/10 shadow-sm'
+                        : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/[0.02]',
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                          selectedTemplate?.id === t.id
+                            ? 'bg-[#185FA5]/15 text-[#185FA5]'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500',
+                        )}
+                      >
+                        <FileSpreadsheet size={18} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                          {t.business_object}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-[#185FA5]/10 text-[#185FA5]">
+                            {t.module_name}
+                          </span>
+                          <span className="truncate">{t.file_name}</span>
+                        </p>
+                      </div>
+                      {selectedTemplate?.id === t.id && (
+                        <CheckCircle2 size={18} className="text-[#185FA5] shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {availableTemplates.length > 0 && (
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-white/10">
+              <Button
+                variant="outline"
+                onClick={() => setIsTemplateModalOpen(false)}
+                disabled={isDownloadingTemplate}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDownloadSelectedTemplate}
+                disabled={!selectedTemplate || isDownloadingTemplate}
+                className="gap-2 bg-[#185FA5] hover:bg-[#124A82] text-white"
+              >
+                {isDownloadingTemplate ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {isDownloadingTemplate ? 'Downloading...' : 'Download Selected'}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
