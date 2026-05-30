@@ -17,6 +17,8 @@ import {
 import type { ModuleConfig, BusinessObject } from '@/config/dataLoaderConfig';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 interface Entity {
   id: string;
@@ -49,6 +51,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [totalRecords] = useState(5);
   const [passedRecords] = useState(5);
+  const [excelData, setExcelData] = useState<any[]>([]);
+  const [mappingConfig, setMappingConfig] = useState<Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }>>([]);
   const [dynamicEntities, setDynamicEntities] = useState<string[]>([]);
   const [entities, setEntities] = useState<Entity[]>([
     { id: 'location', name: 'Location', lifecycleState: 'pending' },
@@ -67,6 +71,23 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
           lifecycleState: 'pending',
         }))
       );
+
+      // Dynamically generate HDL mapping configuration from columns
+      const config: Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }> = [];
+      dynamicEntities.forEach((name, index) => {
+        const id = index + 1;
+        config.push({
+          ColumnOrder: `A${id}`,
+          HDL: name,
+          InputColumnName: name,
+        });
+        config.push({
+          ColumnOrder: `B${id}`,
+          HDL: 'NULL',
+          InputColumnName: name,
+        });
+      });
+      setMappingConfig(config);
     }
   }, [dynamicEntities]);
 
@@ -135,6 +156,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
               const worksheet = workbook.Sheets[firstSheetName];
               if (worksheet) {
                 const parsedData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+                setExcelData(parsedData);
                 const rawHeaders = parsedData.length > 0 ? Object.keys(parsedData[0]) : [];
                 const cleanHeaders = rawHeaders.filter(header => header && header.trim() !== "");
                 setDynamicEntities(cleanHeaders);
@@ -170,10 +192,61 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setCurrentStep('load');
   }, []);
 
-  const handlePrepare = useCallback((id: string) => {
-    setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'prepared' } : e));
-    toast.success(`Entity prepared successfully.`);
-  }, []);
+  const handlePrepare = useCallback(async (id: string, name: string) => {
+    if (excelData.length === 0) {
+      toast.error('No Excel data available. Please upload a valid file first.');
+      return;
+    }
+
+    try {
+      // 1. The METADATA Line (Headers):
+      const metadataRules = mappingConfig
+        .filter(rule => rule.ColumnOrder.startsWith('A'))
+        .sort((a, b) => {
+          const numA = parseInt(a.ColumnOrder.slice(1), 10);
+          const numB = parseInt(b.ColumnOrder.slice(1), 10);
+          return numA - numB;
+        });
+      const metadataLine = "METADATA|" + name + "|" + metadataRules.map(r => r.HDL).join('|');
+
+      // 2. The MERGE Lines (Data Rows):
+      const mergeRules = mappingConfig
+        .filter(rule => rule.ColumnOrder.startsWith('B'))
+        .sort((a, b) => {
+          const numA = parseInt(a.ColumnOrder.slice(1), 10);
+          const numB = parseInt(b.ColumnOrder.slice(1), 10);
+          return numA - numB;
+        });
+
+      const mergeLines = excelData.map(row => {
+        const rowValues = mergeRules.map(rule => {
+          if (rule.HDL && rule.HDL !== 'NULL') {
+            return rule.HDL;
+          }
+          const key = rule.InputColumnName;
+          return key ? String(row[key] ?? '') : '';
+        });
+        return "MERGE|" + name + "|" + rowValues.join('|');
+      });
+
+      // Combine METADATA and MERGE lines
+      const combinedTextContent = [metadataLine, ...mergeLines].join('\n');
+
+      // 3. The Zipper (JSZip Integration):
+      const zip = new JSZip();
+      zip.file(`${name}.dat`, combinedTextContent);
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${name}.zip`);
+
+      // 4. UI Lifecycle Update
+      setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'prepared' } : e));
+      toast.success(`${name}.zip prepared and downloaded successfully!`);
+    } catch (err) {
+      console.error("HDL generation or zipping failed:", err);
+      toast.error(`Failed to prepare entity ${name}.`);
+    }
+  }, [excelData, mappingConfig]);
 
   const handleSubmit = useCallback((id: string) => {
     setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'submitted' } : e));
@@ -189,6 +262,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setCurrentStep('upload');
     setValidationResult(null);
     setValidationErrors([]);
+    setExcelData([]);
+    setMappingConfig([]);
     setDynamicEntities([]);
     setEntities([
       { id: 'location', name: 'Location', lifecycleState: 'pending' },
@@ -521,7 +596,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                       <div className="flex items-center gap-3">
                         {/* Prepare Button */}
                         <button
-                          onClick={() => handlePrepare(entity.id)}
+                          onClick={() => handlePrepare(entity.id, entity.name)}
                           disabled={!isPending}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${
                             isPending
