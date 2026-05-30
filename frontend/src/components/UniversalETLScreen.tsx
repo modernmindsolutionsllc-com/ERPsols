@@ -51,8 +51,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [totalRecords] = useState(5);
   const [passedRecords] = useState(5);
-  const [excelData, setExcelData] = useState<any[]>([]);
-  const [mappingConfig, setMappingConfig] = useState<Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }>>([]);
+  const [excelData, setExcelData] = useState<Record<string, any[]>>({});
+  const [mappingConfigs, setMappingConfigs] = useState<Record<string, Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }>>>({});
   const [dynamicEntities, setDynamicEntities] = useState<string[]>([]);
   const [entities, setEntities] = useState<Entity[]>([
     { id: 'location', name: 'Location', lifecycleState: 'pending' },
@@ -71,49 +71,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
           lifecycleState: 'pending',
         }))
       );
-
-      // Dynamically generate HDL mapping configuration from columns
-      const config: Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }> = [];
-      
-      // 1. Add Operational Metadata/Merge prefixes and Object Label dynamically
-      config.push({
-        ColumnOrder: 'A1',
-        HDL: 'METADATA',
-        InputColumnName: null,
-      });
-      config.push({
-        ColumnOrder: 'A2',
-        HDL: object.label,
-        InputColumnName: null,
-      });
-      config.push({
-        ColumnOrder: 'B1',
-        HDL: 'MERGE',
-        InputColumnName: null,
-      });
-      config.push({
-        ColumnOrder: 'B2',
-        HDL: object.label,
-        InputColumnName: null,
-      });
-
-      // 2. Add spreadsheet column headers mapping starting from index 3
-      dynamicEntities.forEach((name, index) => {
-        const id = index + 3;
-        config.push({
-          ColumnOrder: `A${id}`,
-          HDL: name,
-          InputColumnName: name,
-        });
-        config.push({
-          ColumnOrder: `B${id}`,
-          HDL: 'NULL',
-          InputColumnName: name,
-        });
-      });
-      setMappingConfig(config);
     }
-  }, [dynamicEntities, object.label]);
+  }, [dynamicEntities]);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
   const successPercentage = Math.round((passedRecords / totalRecords) * 100);
@@ -168,7 +127,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       setValidationResult('success');
       setValidationErrors([]);
 
-      // Extract column headers dynamically from Excel file locally using xlsx
+      // Extract Excel sheet names and parse individual sheet data locally using xlsx
       if (file) {
         try {
           const reader = new FileReader();
@@ -176,22 +135,76 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
             const data = e.target?.result;
             if (data) {
               const workbook = XLSX.read(data, { type: 'array' });
-              const firstSheetName = workbook.SheetNames[0];
-              const worksheet = workbook.Sheets[firstSheetName];
-              if (worksheet) {
-                const parsedData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
-                setExcelData(parsedData);
-                const rawHeaders = parsedData.length > 0 ? Object.keys(parsedData[0]) : [];
-                const cleanHeaders = rawHeaders.filter(header => header && header.trim() !== "");
-                setDynamicEntities(cleanHeaders);
-              } else {
-                setDynamicEntities(['Location', 'Job', 'Department', 'Grade']);
-              }
+              
+              // 1. Extract Sheet Names as entities
+              const sheetNames = workbook.SheetNames.filter(
+                name => !name.toLowerCase().includes('sheet')
+              );
+              const finalSheets = sheetNames.length > 0 ? sheetNames : workbook.SheetNames;
+
+              // 2. Parse and store data & HDL rules for each sheet
+              const parsedExcelData: Record<string, any[]> = {};
+              const parsedConfigs: Record<string, any[]> = {};
+
+              finalSheets.forEach(sheetName => {
+                const worksheet = workbook.Sheets[sheetName];
+                if (worksheet) {
+                  const sheetRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+                  parsedExcelData[sheetName] = sheetRows;
+
+                  // Dynamically generate HDL mapping rules from column headers of this sheet
+                  const headers = sheetRows.length > 0 ? Object.keys(sheetRows[0]) : [];
+                  const cleanHeaders = headers.filter(h => h && h.trim() !== "");
+
+                  const config: any[] = [];
+                  // Add Operational Metadata/Merge prefixes and Object Label dynamically
+                  config.push({
+                    ColumnOrder: 'A1',
+                    HDL: 'METADATA',
+                    InputColumnName: null,
+                  });
+                  config.push({
+                    ColumnOrder: 'A2',
+                    HDL: sheetName,
+                    InputColumnName: null,
+                  });
+                  config.push({
+                    ColumnOrder: 'B1',
+                    HDL: 'MERGE',
+                    InputColumnName: null,
+                  });
+                  config.push({
+                    ColumnOrder: 'B2',
+                    HDL: sheetName,
+                    InputColumnName: null,
+                  });
+
+                  // Add spreadsheet column headers mapping starting from index 3
+                  cleanHeaders.forEach((h, index) => {
+                    const id = index + 3;
+                    config.push({
+                      ColumnOrder: `A${id}`,
+                      HDL: h,
+                      InputColumnName: h,
+                    });
+                    config.push({
+                      ColumnOrder: `B${id}`,
+                      HDL: 'NULL',
+                      InputColumnName: h,
+                    });
+                  });
+                  parsedConfigs[sheetName] = config;
+                }
+              });
+
+              setExcelData(parsedExcelData);
+              setMappingConfigs(parsedConfigs);
+              setDynamicEntities(finalSheets);
             }
           };
           reader.readAsArrayBuffer(file);
         } catch (err) {
-          console.error("Error reading xlsx sheet names:", err);
+          console.error("Error reading xlsx sheets:", err);
           setDynamicEntities(['Location', 'Job', 'Department', 'Grade']);
         }
       } else {
@@ -217,14 +230,17 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   }, []);
 
   const handlePrepare = useCallback(async (id: string, name: string) => {
-    if (excelData.length === 0) {
-      toast.error('No Excel data available. Please upload a valid file first.');
+    const sheetData = excelData[name] || [];
+    const sheetConfig = mappingConfigs[name] || [];
+
+    if (sheetData.length === 0) {
+      toast.error(`No data available for sheet: ${name}`);
       return;
     }
 
     try {
       // 1. Build the 'A' Series Line (Headers):
-      const aRules = mappingConfig
+      const aRules = sheetConfig
         .filter(rule => rule.ColumnOrder.startsWith('A'))
         .sort((a, b) => {
           const numA = parseInt(a.ColumnOrder.slice(1), 10);
@@ -242,7 +258,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
         .join('|');
 
       // 2. Build the 'B' Series Lines (Data Rows):
-      const bRules = mappingConfig
+      const bRules = sheetConfig
         .filter(rule => rule.ColumnOrder.startsWith('B'))
         .sort((a, b) => {
           const numA = parseInt(a.ColumnOrder.slice(1), 10);
@@ -250,7 +266,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
           return numA - numB;
         });
 
-      const bLines = excelData.map(row => {
+      const bLines = sheetData.map(row => {
         const rowValues = bRules.map(rule => {
           if (rule.HDL && rule.HDL.toUpperCase() !== 'NULL') {
             return rule.HDL;
@@ -282,7 +298,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       console.error("HDL generation or zipping failed:", err);
       toast.error(`Failed to prepare entity ${name}.`);
     }
-  }, [excelData, mappingConfig]);
+  }, [excelData, mappingConfigs]);
 
   const handleSubmit = useCallback((id: string) => {
     setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'submitted' } : e));
@@ -298,8 +314,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setCurrentStep('upload');
     setValidationResult(null);
     setValidationErrors([]);
-    setExcelData([]);
-    setMappingConfig([]);
+    setExcelData({});
+    setMappingConfigs({});
     setDynamicEntities([]);
     setEntities([
       { id: 'location', name: 'Location', lifecycleState: 'pending' },
