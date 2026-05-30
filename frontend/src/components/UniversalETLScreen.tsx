@@ -150,50 +150,22 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                 const worksheet = workbook.Sheets[sheetName];
                 if (worksheet) {
                   const sheetRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
-                  parsedExcelData[sheetName] = sheetRows;
+                  
+                  // 1. Store the sheet rows directly as the configuration mapping rules!
+                  parsedConfigs[sheetName] = sheetRows;
 
-                  // Dynamically generate HDL mapping rules from column headers of this sheet
-                  const headers = sheetRows.length > 0 ? Object.keys(sheetRows[0]) : [];
-                  const cleanHeaders = headers.filter(h => h && h.trim() !== "");
-
-                  const config: any[] = [];
-                  // Add Operational Metadata/Merge prefixes and Object Label dynamically
-                  config.push({
-                    ColumnOrder: 'A1',
-                    HDL: 'METADATA',
-                    InputColumnName: null,
+                  // 2. Generate a mock excelData row where the value for each InputColumnName is the InputColumnName itself
+                  const mockRow: Record<string, any> = {};
+                  sheetRows.forEach(row => {
+                    const order = row.ColumnOrder || '';
+                    if (order.startsWith('B')) {
+                      const inputCol = row.InputColumnName;
+                      if (inputCol && inputCol !== 'Null' && inputCol !== 'NULL') {
+                        mockRow[inputCol] = inputCol;
+                      }
+                    }
                   });
-                  config.push({
-                    ColumnOrder: 'A2',
-                    HDL: sheetName,
-                    InputColumnName: null,
-                  });
-                  config.push({
-                    ColumnOrder: 'B1',
-                    HDL: 'MERGE',
-                    InputColumnName: null,
-                  });
-                  config.push({
-                    ColumnOrder: 'B2',
-                    HDL: sheetName,
-                    InputColumnName: null,
-                  });
-
-                  // Add spreadsheet column headers mapping starting from index 3
-                  cleanHeaders.forEach((h, index) => {
-                    const id = index + 3;
-                    config.push({
-                      ColumnOrder: `A${id}`,
-                      HDL: h,
-                      InputColumnName: h,
-                    });
-                    config.push({
-                      ColumnOrder: `B${id}`,
-                      HDL: 'NULL',
-                      InputColumnName: h,
-                    });
-                  });
-                  parsedConfigs[sheetName] = config;
+                  parsedExcelData[sheetName] = [mockRow];
                 }
               });
 
@@ -233,15 +205,15 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     const sheetData = excelData[name] || [];
     const sheetConfig = mappingConfigs[name] || [];
 
-    if (sheetData.length === 0) {
-      toast.error(`No data available for sheet: ${name}`);
+    if (sheetConfig.length === 0) {
+      toast.error(`No configuration rules available for sheet: ${name}`);
       return;
     }
 
     try {
       // 1. Build the 'A' Series Line (Headers):
       const aRules = sheetConfig
-        .filter(rule => rule.ColumnOrder.startsWith('A'))
+        .filter(rule => rule.ColumnOrder && rule.ColumnOrder.startsWith('A'))
         .sort((a, b) => {
           const numA = parseInt(a.ColumnOrder.slice(1), 10);
           const numB = parseInt(b.ColumnOrder.slice(1), 10);
@@ -250,8 +222,10 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
 
       const aLine = aRules
         .map(rule => {
-          if (rule.HDL && rule.HDL.toUpperCase() !== 'NULL') {
-            return rule.HDL;
+          const hdlVal = rule.HDL;
+          const isNull = hdlVal === null || hdlVal === undefined || String(hdlVal).toUpperCase() === 'NULL' || String(hdlVal).trim() === '';
+          if (!isNull) {
+            return String(hdlVal);
           }
           return rule.InputColumnName ?? '';
         })
@@ -259,7 +233,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
 
       // 2. Build the 'B' Series Lines (Data Rows):
       const bRules = sheetConfig
-        .filter(rule => rule.ColumnOrder.startsWith('B'))
+        .filter(rule => rule.ColumnOrder && rule.ColumnOrder.startsWith('B'))
         .sort((a, b) => {
           const numA = parseInt(a.ColumnOrder.slice(1), 10);
           const numB = parseInt(b.ColumnOrder.slice(1), 10);
@@ -268,8 +242,10 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
 
       const bLines = sheetData.map(row => {
         const rowValues = bRules.map(rule => {
-          if (rule.HDL && rule.HDL.toUpperCase() !== 'NULL') {
-            return rule.HDL;
+          const hdlVal = rule.HDL;
+          const isNull = hdlVal === null || hdlVal === undefined || String(hdlVal).toUpperCase() === 'NULL' || String(hdlVal).trim() === '';
+          if (!isNull) {
+            return String(hdlVal);
           }
           const key = rule.InputColumnName;
           if (key) {
