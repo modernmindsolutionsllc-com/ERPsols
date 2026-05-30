@@ -123,7 +123,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       setValidationResult('success');
       setValidationErrors([]);
 
-      // Extract sheet names from Excel file locally using xlsx
+      // Extract column headers dynamically from Excel file locally using xlsx
       if (file) {
         try {
           const reader = new FileReader();
@@ -131,12 +131,16 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
             const data = e.target?.result;
             if (data) {
               const workbook = XLSX.read(data, { type: 'array' });
-              // Filter out default or empty sheets
-              const sheetNames = workbook.SheetNames.filter(
-                name => !name.toLowerCase().includes('sheet')
-              );
-              const finalSheets = sheetNames.length > 0 ? sheetNames : workbook.SheetNames;
-              setDynamicEntities(finalSheets);
+              const firstSheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[firstSheetName];
+              if (worksheet) {
+                const parsedData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+                const rawHeaders = parsedData.length > 0 ? Object.keys(parsedData[0]) : [];
+                const cleanHeaders = rawHeaders.filter(header => header && header.trim() !== "");
+                setDynamicEntities(cleanHeaders);
+              } else {
+                setDynamicEntities(['Location', 'Job', 'Department', 'Grade']);
+              }
             }
           };
           reader.readAsArrayBuffer(file);
