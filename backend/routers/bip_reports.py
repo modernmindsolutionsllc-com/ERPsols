@@ -68,6 +68,16 @@ def _get_oracle_credential(db: Session, user_id: int, env_name: str) -> OracleCr
 def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
     """Returns (username, password, url) from a credential record."""
     try:
+        if credential.encrypted_oracle_username is not None:
+            username = decrypt_password(credential.encrypted_oracle_username).strip()
+        else:
+            username = str(credential.legacy_oracle_username or "").strip()
+
+        if credential.encrypted_oracle_url is not None:
+            base_url = decrypt_password(credential.encrypted_oracle_url).strip().rstrip("/")
+        else:
+            base_url = str(credential.legacy_oracle_url or "").strip().rstrip("/")
+
         password = decrypt_password(credential.encrypted_oracle_password)
         _logger.debug(
             f"Decrypted password OK — len={len(password)}, "
@@ -81,7 +91,6 @@ def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
             detail="Failed to decrypt Oracle credentials. Please reconnect your account.",
         )
 
-    base_url = credential.oracle_url.strip().rstrip("/")
     if not base_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -93,7 +102,13 @@ def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
     else:
         url = base_url
 
-    return credential.oracle_username, password, url
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Oracle username is missing in the environment configuration.",
+        )
+
+    return username, password, url
 
 
 def _effective_sql_text(cfg: BipReportConfig) -> str | None:

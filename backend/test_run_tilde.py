@@ -15,12 +15,16 @@ def main():
     c = conn.cursor()
     
     # 1. Get credentials
-    row_cred = c.execute("SELECT oracle_username, encrypted_oracle_password, oracle_url FROM oracle_credentials LIMIT 1").fetchone()
+    row_cred = c.execute(
+        "SELECT encrypted_oracle_username, encrypted_oracle_password, encrypted_oracle_url FROM oracle_credentials LIMIT 1"
+    ).fetchone()
     if not row_cred:
         print("No credentials found!")
         return
-    username, enc_pwd, url = row_cred
+    enc_username, enc_pwd, enc_url = row_cred
+    username = decrypt_password(enc_username)
     password = decrypt_password(enc_pwd)
+    url = decrypt_password(enc_url)
     
     # 2. Get query for Test_Person_Numbers_Recent
     row_q = c.execute("SELECT report_name, encrypted_sql_query FROM bip_report_configs WHERE id = 5").fetchone()

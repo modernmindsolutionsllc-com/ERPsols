@@ -104,6 +104,71 @@ def decrypt_password(encrypted_password) -> str:
         raise RuntimeError("Failed to decrypt — Fernet key may have been rotated or data is corrupt.")
 
 
+def _decrypt_oracle_value(encrypted_value, field_name: str) -> str:
+    try:
+        value = decrypt_password(encrypted_value).strip()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Oracle credentials. Please reconnect your account.",
+        ) from exc
+
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Oracle {field_name} is missing in the environment configuration.",
+        )
+
+    return value
+
+
+def _resolve_oracle_value(encrypted_value, legacy_value, field_name: str) -> str:
+    if encrypted_value is not None:
+        return _decrypt_oracle_value(encrypted_value, field_name)
+
+    if legacy_value is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Oracle credentials. Please reconnect your account.",
+        )
+
+    value = str(legacy_value).strip()
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Oracle {field_name} is missing in the environment configuration.",
+        )
+    return value
+
+
+def _decrypt_oracle_credential(credential: OracleCredential) -> tuple[str, str, str]:
+    username = _resolve_oracle_value(
+        credential.encrypted_oracle_username,
+        credential.legacy_oracle_username,
+        "username",
+    )
+    password = _decrypt_oracle_value(credential.encrypted_oracle_password, "password")
+    oracle_url = _resolve_oracle_value(
+        credential.encrypted_oracle_url,
+        credential.legacy_oracle_url,
+        "URL",
+    )
+    return username, password, oracle_url
+
+
+def _serialize_oracle_session(credential: OracleCredential) -> OracleSessionResponse:
+    username, _password, oracle_url = _decrypt_oracle_credential(credential)
+    return OracleSessionResponse(
+        id=credential.id,
+        env_name=credential.env_name,
+        oracle_url=oracle_url,
+        oracle_username=username,
+        is_active=credential.is_active,
+        created_at=credential.created_at,
+        updated_at=credential.updated_at,
+    )
+
+
 # ── Intelligent URL Formatter ─────────────────────────────────────────────────
 
 _BIP_WSDL_SUFFIX = "/xmlpserver/services/ExternalReportWSSService"
@@ -147,7 +212,7 @@ def list_oracle_sessions(
         .order_by(OracleCredential.created_at.desc())
         .all()
     )
-    return sessions
+    return [_serialize_oracle_session(session) for session in sessions]
 
 
 @router.post("/oracle/sessions", response_model=OracleSessionResponse)
@@ -190,6 +255,8 @@ def upsert_oracle_session(
         )
 
     # ── Credentials verified — safe to persist ────────────────────────
+    encrypted_username = encrypt_password(body.oracle_username)
+    encrypted_url = encrypt_password(normalized_url)
     encrypted_pw = encrypt_password(body.oracle_password)
     now = datetime.now(timezone.utc)
 
@@ -205,20 +272,24 @@ def upsert_oracle_session(
 
     if existing:
         existing.env_name = body.env_name
-        existing.oracle_url = normalized_url
-        existing.oracle_username = body.oracle_username
+        existing.encrypted_oracle_url = encrypted_url
+        existing.encrypted_oracle_username = encrypted_username
         existing.encrypted_oracle_password = encrypted_pw
+        existing.legacy_oracle_url = normalized_url
+        existing.legacy_oracle_username = body.oracle_username
         existing.updated_at = now
         db.commit()
         db.refresh(existing)
-        return existing
+        return _serialize_oracle_session(existing)
     else:
         credential = OracleCredential(
             user_id=user_id,
             env_name=body.env_name,
-            oracle_url=normalized_url,
-            oracle_username=body.oracle_username,
+            encrypted_oracle_url=encrypted_url,
+            encrypted_oracle_username=encrypted_username,
             encrypted_oracle_password=encrypted_pw,
+            legacy_oracle_url=normalized_url,
+            legacy_oracle_username=body.oracle_username,
             is_active=True,
             created_at=now,
             updated_at=now,
@@ -226,7 +297,7 @@ def upsert_oracle_session(
         db.add(credential)
         db.commit()
         db.refresh(credential)
-        return credential
+        return _serialize_oracle_session(credential)
 
 
 @router.delete("/oracle/sessions/{env_name}", response_model=MessageResponse)
@@ -329,17 +400,21 @@ def connect_oracle(
     )
 
     if existing:
-        existing.oracle_url = normalized_url
-        existing.oracle_username = body.oracle_username
+        existing.encrypted_oracle_url = encrypted_url
+        existing.encrypted_oracle_username = encrypted_username
         existing.encrypted_oracle_password = encrypted_pw
+        existing.legacy_oracle_url = normalized_url
+        existing.legacy_oracle_username = body.oracle_username
         existing.updated_at = now
     else:
         credential = OracleCredential(
             user_id=user_id,
             env_name=body.env_name,
-            oracle_url=normalized_url,
-            oracle_username=body.oracle_username,
+            encrypted_oracle_url=encrypted_url,
+            encrypted_oracle_username=encrypted_username,
             encrypted_oracle_password=encrypted_pw,
+            legacy_oracle_url=normalized_url,
+            legacy_oracle_username=body.oracle_username,
             is_active=True,
             created_at=now,
             updated_at=now,
@@ -374,11 +449,12 @@ def oracle_status(
     )
 
     if existing:
+        username, _password, oracle_url = _decrypt_oracle_credential(existing)
         return {
             "connected": True,
-            "oracle_url": existing.oracle_url,
+            "oracle_url": oracle_url,
             "env_name": existing.env_name,
-            "oracle_username": existing.oracle_username,
+            "oracle_username": username,
             "connected_at": existing.updated_at.isoformat() if existing.updated_at else None,
         }
 
@@ -420,14 +496,7 @@ def deploy_catalog(
             detail=f"Oracle environment '{env_name}' not found.",
         )
 
-    # Decrypt stored password
-    try:
-        plain_password = decrypt_password(credential.encrypted_oracle_password)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt Oracle credentials. Please reconnect your account.",
-        )
+    username, plain_password, oracle_url = _decrypt_oracle_credential(credential)
 
     # Collect logs via callback
     logs: list[str] = []
@@ -438,9 +507,9 @@ def deploy_catalog(
 
     try:
         success = validate_catalog(
-            username=credential.oracle_username,
+            username=username,
             password=plain_password,
-            url=credential.oracle_url,
+            url=oracle_url,
             env_name=env_name,
             append_log=append_log,
         )

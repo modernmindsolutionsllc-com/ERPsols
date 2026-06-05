@@ -183,8 +183,8 @@ class OracleCredential(Base):
     Supports multi-tenancy: each user can store credentials for multiple
     environments (e.g., Production, UAT, Development).
 
-    The encrypted_oracle_password column holds AES-encrypted ciphertext
-    — the plain text password NEVER touches the database.
+    Sensitive fields are stored as Fernet-encrypted ciphertext so plain text
+    Oracle credentials never touch the database.
     """
     __tablename__ = "oracle_credentials"
     __table_args__ = (
@@ -194,9 +194,11 @@ class OracleCredential(Base):
     id                        = Column(Integer, primary_key=True, autoincrement=True)
     user_id                   = Column(Integer, ForeignKey("users.id"), nullable=False)
     env_name                  = Column(String, nullable=False, default="Demo Oracle Fusion")
-    oracle_url                = Column(String, nullable=False)
-    oracle_username           = Column(String, nullable=False)
+    encrypted_oracle_url      = Column(String, nullable=False)
+    encrypted_oracle_username = Column(String, nullable=False)
     encrypted_oracle_password = Column(String, nullable=False)
+    legacy_oracle_url         = Column("oracle_url", String, nullable=True)
+    legacy_oracle_username    = Column("oracle_username", String, nullable=True)
     is_active                 = Column(Boolean, nullable=False, default=True)
     created_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc),
@@ -376,7 +378,8 @@ def init_db():
     cursor = conn.cursor()
     _safe_alter_columns(cursor, "oracle_credentials", [
         ("env_name", "TEXT DEFAULT 'Demo Oracle Fusion'"),
-        ("oracle_url", "TEXT"),
+        ("encrypted_oracle_url", "TEXT"),
+        ("encrypted_oracle_username", "TEXT"),
         ("is_active", "INTEGER DEFAULT 1"),
     ])
     _safe_alter_columns(cursor, "bip_report_configs", [

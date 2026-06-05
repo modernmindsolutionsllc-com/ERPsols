@@ -12,12 +12,16 @@ from routers.integrations import decrypt_password
 def main():
     conn = sqlite3.connect('backend/app.db')
     c = conn.cursor()
-    row_cred = c.execute("SELECT oracle_username, encrypted_oracle_password, oracle_url FROM oracle_credentials LIMIT 1").fetchone()
+    row_cred = c.execute(
+        "SELECT encrypted_oracle_username, encrypted_oracle_password, encrypted_oracle_url FROM oracle_credentials LIMIT 1"
+    ).fetchone()
     if not row_cred:
         print("No credentials found!")
         return
-    username, enc_pwd, url = row_cred
+    enc_username, enc_pwd, enc_url = row_cred
+    username = decrypt_password(enc_username)
     password = decrypt_password(enc_pwd)
+    url = decrypt_password(enc_url)
     conn.close()
 
     print("Logging into BI...")

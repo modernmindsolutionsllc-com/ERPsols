@@ -18,13 +18,17 @@ def main():
     c = conn.cursor()
     
     # 1. Get credentials
-    row_cred = c.execute("SELECT env_name, oracle_username, encrypted_oracle_password, oracle_url FROM oracle_credentials LIMIT 1").fetchone()
+    row_cred = c.execute(
+        "SELECT env_name, encrypted_oracle_username, encrypted_oracle_password, encrypted_oracle_url FROM oracle_credentials LIMIT 1"
+    ).fetchone()
     if not row_cred:
         print("No credentials found!")
         conn.close()
         return
-    env_name, username, enc_pwd, url = row_cred
+    env_name, enc_username, enc_pwd, enc_url = row_cred
+    username = decrypt_password(enc_username)
     password = decrypt_password(enc_pwd)
+    url = decrypt_password(enc_url)
     conn.close()
     
     print(f"Deploying catalog for: {username} on {url}...")
