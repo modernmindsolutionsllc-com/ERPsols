@@ -197,8 +197,6 @@ class OracleCredential(Base):
     encrypted_oracle_url      = Column(String, nullable=False)
     encrypted_oracle_username = Column(String, nullable=False)
     encrypted_oracle_password = Column(String, nullable=False)
-    legacy_oracle_url         = Column("oracle_url", String, nullable=True)
-    legacy_oracle_username    = Column("oracle_username", String, nullable=True)
     is_active                 = Column(Boolean, nullable=False, default=True)
     created_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at                = Column(DateTime, default=lambda: datetime.now(timezone.utc),
@@ -215,7 +213,6 @@ class BipReportConfig(Base):
     sub_module  = Column(String, nullable=True)
     report_name = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    sql_query   = Column(Text, nullable=True)
     encrypted_sql_query = Column(String, nullable=True)
     is_active   = Column(Boolean, nullable=False, default=True)
     created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))

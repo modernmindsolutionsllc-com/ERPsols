@@ -68,16 +68,8 @@ def _get_oracle_credential(db: Session, user_id: int, env_name: str) -> OracleCr
 def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
     """Returns (username, password, url) from a credential record."""
     try:
-        if credential.encrypted_oracle_username is not None:
-            username = decrypt_password(credential.encrypted_oracle_username).strip()
-        else:
-            username = str(credential.legacy_oracle_username or "").strip()
-
-        if credential.encrypted_oracle_url is not None:
-            base_url = decrypt_password(credential.encrypted_oracle_url).strip().rstrip("/")
-        else:
-            base_url = str(credential.legacy_oracle_url or "").strip().rstrip("/")
-
+        username = decrypt_password(credential.encrypted_oracle_username).strip()
+        base_url = decrypt_password(credential.encrypted_oracle_url).strip().rstrip("/")
         password = decrypt_password(credential.encrypted_oracle_password)
         _logger.debug(
             f"Decrypted password OK — len={len(password)}, "
@@ -112,15 +104,13 @@ def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
 
 
 def _effective_sql_text(cfg: BipReportConfig) -> str | None:
-    """Prefer Fernet-encrypted SQL; fall back to legacy plain-text sql_query."""
+    """Return executable SQL from the encrypted storage column."""
     if cfg.encrypted_sql_query:
         try:
             plain = decrypt_password(cfg.encrypted_sql_query).strip()
             return plain or None
         except Exception:
             pass
-    if cfg.sql_query and str(cfg.sql_query).strip():
-        return str(cfg.sql_query).strip()
     return None
 
 
@@ -156,7 +146,6 @@ def create_bip_report(
         existing.module = report_in.module
         existing.sub_module = report_in.sub_module
         existing.description = report_in.description
-        existing.sql_query = report_in.sql_query
         existing.encrypted_sql_query = encrypted_sql
         existing.is_active = True
         target = existing
@@ -167,7 +156,6 @@ def create_bip_report(
             report_name=report_name,
             description=report_in.description,
             encrypted_sql_query=encrypted_sql,
-            sql_query=report_in.sql_query,
             is_active=True,
         )
         db.add(target)
@@ -318,7 +306,6 @@ def import_oracle_catalog_reports(
             existing.module = "Validate Catalog"
             existing.sub_module = item.get("sub_module")
             existing.description = item.get("description")
-            existing.sql_query = sql_query
             existing.encrypted_sql_query = encrypted_sql
             existing.is_active = True
             saved_reports.append(existing)
@@ -329,7 +316,6 @@ def import_oracle_catalog_reports(
                 sub_module=item.get("sub_module"),
                 report_name=report_name,
                 description=item.get("description"),
-                sql_query=sql_query,
                 encrypted_sql_query=encrypted_sql,
                 is_active=True,
             )

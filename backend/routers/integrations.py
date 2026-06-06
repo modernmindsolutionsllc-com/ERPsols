@@ -122,37 +122,10 @@ def _decrypt_oracle_value(encrypted_value, field_name: str) -> str:
     return value
 
 
-def _resolve_oracle_value(encrypted_value, legacy_value, field_name: str) -> str:
-    if encrypted_value is not None:
-        return _decrypt_oracle_value(encrypted_value, field_name)
-
-    if legacy_value is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt Oracle credentials. Please reconnect your account.",
-        )
-
-    value = str(legacy_value).strip()
-    if not value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Oracle {field_name} is missing in the environment configuration.",
-        )
-    return value
-
-
 def _decrypt_oracle_credential(credential: OracleCredential) -> tuple[str, str, str]:
-    username = _resolve_oracle_value(
-        credential.encrypted_oracle_username,
-        credential.legacy_oracle_username,
-        "username",
-    )
+    username = _decrypt_oracle_value(credential.encrypted_oracle_username, "username")
     password = _decrypt_oracle_value(credential.encrypted_oracle_password, "password")
-    oracle_url = _resolve_oracle_value(
-        credential.encrypted_oracle_url,
-        credential.legacy_oracle_url,
-        "URL",
-    )
+    oracle_url = _decrypt_oracle_value(credential.encrypted_oracle_url, "URL")
     return username, password, oracle_url
 
 
@@ -275,8 +248,6 @@ def upsert_oracle_session(
         existing.encrypted_oracle_url = encrypted_url
         existing.encrypted_oracle_username = encrypted_username
         existing.encrypted_oracle_password = encrypted_pw
-        existing.legacy_oracle_url = normalized_url
-        existing.legacy_oracle_username = body.oracle_username
         existing.updated_at = now
         db.commit()
         db.refresh(existing)
@@ -288,8 +259,6 @@ def upsert_oracle_session(
             encrypted_oracle_url=encrypted_url,
             encrypted_oracle_username=encrypted_username,
             encrypted_oracle_password=encrypted_pw,
-            legacy_oracle_url=normalized_url,
-            legacy_oracle_username=body.oracle_username,
             is_active=True,
             created_at=now,
             updated_at=now,
@@ -387,6 +356,8 @@ def connect_oracle(
         )
 
     # ── Credentials verified — safe to persist ────────────────────────
+    encrypted_username = encrypt_password(body.oracle_username)
+    encrypted_url = encrypt_password(normalized_url)
     encrypted_pw = encrypt_password(body.oracle_password)
     now = datetime.now(timezone.utc)
 
@@ -403,8 +374,6 @@ def connect_oracle(
         existing.encrypted_oracle_url = encrypted_url
         existing.encrypted_oracle_username = encrypted_username
         existing.encrypted_oracle_password = encrypted_pw
-        existing.legacy_oracle_url = normalized_url
-        existing.legacy_oracle_username = body.oracle_username
         existing.updated_at = now
     else:
         credential = OracleCredential(
@@ -413,8 +382,6 @@ def connect_oracle(
             encrypted_oracle_url=encrypted_url,
             encrypted_oracle_username=encrypted_username,
             encrypted_oracle_password=encrypted_pw,
-            legacy_oracle_url=normalized_url,
-            legacy_oracle_username=body.oracle_username,
             is_active=True,
             created_at=now,
             updated_at=now,
