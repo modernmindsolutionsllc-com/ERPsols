@@ -10,7 +10,8 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { DATA_LOADER_CONFIG, type ModuleConfig, type BusinessObject } from '@/config/dataLoaderConfig';
+import { DATA_LOADER_CONFIG } from '@/config/dataLoaderConfig';
+import type { ModuleConfig, BusinessObject } from '@/features/dataConversion/types';
 import { UniversalETLScreen } from '@/components/UniversalETLScreen';
 import { useOracleSessions } from '@/hooks/useOracleSessions';
 import { OracleSessionSelector } from '@/components/shared/OracleSessionSelector';

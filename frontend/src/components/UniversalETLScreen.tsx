@@ -14,17 +14,14 @@ import {
   Upload, CheckCircle2, FileSpreadsheet, Loader2,
   ArrowLeft, AlertCircle, Rocket, X, FileUp, Download,
 } from 'lucide-react';
-import type { ModuleConfig, BusinessObject } from '@/config/dataLoaderConfig';
+import type { ModuleConfig, BusinessObject, Entity, ExcelRow, MappingRule } from '@/features/dataConversion/types';
+import {
+  buildDatContent,
+  createEntitiesFromNames,
+  downloadEntityArchive,
+  parseWorkbookForConversion,
+} from '@/features/dataConversion/workbook';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-
-interface Entity {
-  id: string;
-  name: string;
-  lifecycleState: 'pending' | 'prepared' | 'submitted';
-}
 
 interface UniversalETLScreenProps {
   module: ModuleConfig;
@@ -40,6 +37,11 @@ const STEPS: { key: ETLStep; label: string; icon: typeof Upload }[] = [
   { key: 'load', label: 'Load to Oracle', icon: Rocket },
 ];
 
+function getDefaultEntityNames(object: BusinessObject): string[] {
+  return object.defaultEntities && object.defaultEntities.length > 0
+    ? object.defaultEntities
+    : [object.label];
+}
 
 
 export function UniversalETLScreen({ module, object, onBack }: UniversalETLScreenProps) {
@@ -51,26 +53,15 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [totalRecords] = useState(5);
   const [passedRecords] = useState(5);
-  const [excelData, setExcelData] = useState<Record<string, any[]>>({});
-  const [mappingConfigs, setMappingConfigs] = useState<Record<string, Array<{ ColumnOrder: string; HDL: string | null; InputColumnName: string | null }>>>({});
+  const [excelData, setExcelData] = useState<Record<string, ExcelRow[]>>({});
+  const [mappingConfigs, setMappingConfigs] = useState<Record<string, MappingRule[]>>({});
   const [dynamicEntities, setDynamicEntities] = useState<string[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([
-    { id: 'location', name: 'Location', lifecycleState: 'pending' },
-    { id: 'job', name: 'Job', lifecycleState: 'pending' },
-    { id: 'department', name: 'Department', lifecycleState: 'pending' },
-    { id: 'grade', name: 'Grade', lifecycleState: 'pending' },
-  ]);
+  const [entities, setEntities] = useState<Entity[]>(() => createEntitiesFromNames(getDefaultEntityNames(object)));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (dynamicEntities.length > 0) {
-      setEntities(
-        dynamicEntities.map(name => ({
-          id: name.toLowerCase().replace(/\s+/g, '_'),
-          name: name,
-          lifecycleState: 'pending',
-        }))
-      );
+      setEntities(createEntitiesFromNames(dynamicEntities));
     }
   }, [dynamicEntities]);
 
@@ -127,60 +118,19 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       setValidationResult('success');
       setValidationErrors([]);
 
-      // Extract Excel sheet names and parse individual sheet data locally using xlsx
       if (file) {
         try {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const data = e.target?.result;
-            if (data) {
-              const workbook = XLSX.read(data, { type: 'array' });
-              
-              // 1. Extract Sheet Names as entities
-              const sheetNames = workbook.SheetNames.filter(
-                name => !name.toLowerCase().includes('sheet')
-              );
-              const finalSheets = sheetNames.length > 0 ? sheetNames : workbook.SheetNames;
-
-              // 2. Parse and store data & HDL rules for each sheet
-              const parsedExcelData: Record<string, any[]> = {};
-              const parsedConfigs: Record<string, any[]> = {};
-
-              finalSheets.forEach(sheetName => {
-                const worksheet = workbook.Sheets[sheetName];
-                if (worksheet) {
-                  const sheetRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
-                  
-                  // 1. Store the sheet rows directly as the configuration mapping rules!
-                  parsedConfigs[sheetName] = sheetRows;
-
-                  // 2. Generate a mock excelData row where the value for each InputColumnName is the InputColumnName itself
-                  const mockRow: Record<string, any> = {};
-                  sheetRows.forEach(row => {
-                    const order = row.ColumnOrder || '';
-                    if (order.startsWith('B')) {
-                      const inputCol = row.InputColumnName;
-                      if (inputCol && inputCol !== 'Null' && inputCol !== 'NULL') {
-                        mockRow[inputCol] = inputCol;
-                      }
-                    }
-                  });
-                  parsedExcelData[sheetName] = [mockRow];
-                }
-              });
-
-              setExcelData(parsedExcelData);
-              setMappingConfigs(parsedConfigs);
-              setDynamicEntities(finalSheets);
-            }
-          };
-          reader.readAsArrayBuffer(file);
+          const parsedWorkbook = await parseWorkbookForConversion(file);
+          setExcelData(parsedWorkbook.excelData);
+          setMappingConfigs(parsedWorkbook.mappingConfigs);
+          setDynamicEntities(parsedWorkbook.entityNames);
         } catch (err) {
-          console.error("Error reading xlsx sheets:", err);
-          setDynamicEntities(['Location', 'Job', 'Department', 'Grade']);
+          console.error('Error reading xlsx sheets:', err);
+          setDynamicEntities(getDefaultEntityNames(object));
+          toast.warning('Workbook parsing failed. Falling back to the default entity order for this object.');
         }
       } else {
-        setDynamicEntities(['Location', 'Job', 'Department', 'Grade']);
+        setDynamicEntities(getDefaultEntityNames(object));
       }
     } else {
       setValidationResult('error');
@@ -190,7 +140,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       ]);
     }
     setIsValidating(false);
-  }, [file]);
+  }, [file, object]);
 
   const handleDownloadReport = useCallback(() => {
     console.log('Downloading validation report...');
@@ -211,67 +161,13 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     }
 
     try {
-      // 1. Build the 'A' Series Line (Headers):
-      const aRules = sheetConfig
-        .filter(rule => rule.ColumnOrder && rule.ColumnOrder.startsWith('A'))
-        .sort((a, b) => {
-          const numA = parseInt(a.ColumnOrder.slice(1), 10);
-          const numB = parseInt(b.ColumnOrder.slice(1), 10);
-          return numA - numB;
-        });
+      const datContent = buildDatContent(sheetData, sheetConfig);
+      await downloadEntityArchive(name, datContent);
 
-      const aLine = aRules
-        .map(rule => {
-          const hdlVal = rule.HDL;
-          const isNull = hdlVal === null || hdlVal === undefined || String(hdlVal).toUpperCase() === 'NULL' || String(hdlVal).trim() === '';
-          if (!isNull) {
-            return String(hdlVal);
-          }
-          return rule.InputColumnName ?? '';
-        })
-        .join('|');
-
-      // 2. Build the 'B' Series Lines (Data Rows):
-      const bRules = sheetConfig
-        .filter(rule => rule.ColumnOrder && rule.ColumnOrder.startsWith('B'))
-        .sort((a, b) => {
-          const numA = parseInt(a.ColumnOrder.slice(1), 10);
-          const numB = parseInt(b.ColumnOrder.slice(1), 10);
-          return numA - numB;
-        });
-
-      const bLines = sheetData.map(row => {
-        const rowValues = bRules.map(rule => {
-          const hdlVal = rule.HDL;
-          const isNull = hdlVal === null || hdlVal === undefined || String(hdlVal).toUpperCase() === 'NULL' || String(hdlVal).trim() === '';
-          if (!isNull) {
-            return String(hdlVal);
-          }
-          const key = rule.InputColumnName;
-          if (key) {
-            const val = row[key];
-            return val !== undefined && val !== null ? String(val) : '';
-          }
-          return '';
-        });
-        return rowValues.join('|');
-      });
-
-      // Combine 'A' line and 'B' lines
-      const combinedTextContent = [aLine, ...bLines].join('\n');
-
-      // 3. The Zipper (JSZip Integration):
-      const zip = new JSZip();
-      zip.file(`${name}.dat`, combinedTextContent);
-
-      const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${name}.zip`);
-
-      // 4. UI Lifecycle Update
       setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'prepared' } : e));
       toast.success(`${name}.zip prepared and downloaded successfully!`);
     } catch (err) {
-      console.error("HDL generation or zipping failed:", err);
+      console.error('HDL generation or zipping failed:', err);
       toast.error(`Failed to prepare entity ${name}.`);
     }
   }, [excelData, mappingConfigs]);
@@ -293,13 +189,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setExcelData({});
     setMappingConfigs({});
     setDynamicEntities([]);
-    setEntities([
-      { id: 'location', name: 'Location', lifecycleState: 'pending' },
-      { id: 'job', name: 'Job', lifecycleState: 'pending' },
-      { id: 'department', name: 'Department', lifecycleState: 'pending' },
-      { id: 'grade', name: 'Grade', lifecycleState: 'pending' },
-    ]);
-  }, []);
+    setEntities(createEntitiesFromNames(getDefaultEntityNames(object)));
+  }, [object]);
 
   const ObjectIcon = object.icon;
 
@@ -588,12 +479,12 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
               <div className="flex flex-col gap-4 border-b border-slate-100 dark:border-white/5 pb-4 mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    Workforce Structure
+                    {object.loadTitle ?? object.label}
                   </h3>
                   <div className="mt-2 inline-flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30 rounded-lg p-3 max-w-[650px] leading-relaxed">
                     <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-500" />
                     <span>
-                      Manage the HCM Data Loader lifecycle for each entity. Please load the objects in the displayed order to prevent data dependency errors.
+                      {object.loadInstructions ?? 'Manage the HCM Data Loader lifecycle for each entity. Please load the objects in the displayed order to prevent data dependency errors.'}
                     </span>
                   </div>
                 </div>

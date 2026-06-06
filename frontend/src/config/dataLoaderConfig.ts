@@ -13,26 +13,7 @@ import {
   Contact, DollarSign, Briefcase, Landmark, CreditCard, BarChart3,
   FileText, ClipboardList, UserCheck,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-
-export interface BusinessObject {
-  key: string;
-  label: string;
-  icon: LucideIcon;
-  description: string;
-}
-
-export interface ModuleConfig {
-  key: string;
-  label: string;
-  icon: LucideIcon;
-  description: string;
-  accentColor: string;
-  gradientFrom: string;
-  gradientTo: string;
-  tagColor: string;
-  objects: BusinessObject[];
-}
+import type { ModuleConfig } from '@/features/dataConversion/types';
 
 export const DATA_LOADER_CONFIG: ModuleConfig[] = [
   {
@@ -45,10 +26,42 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
     gradientTo: '#0F6E56',
     tagColor: '#6EE7B7',
     objects: [
-      { key: 'workforce_structures', label: 'Workforce Structures', icon: Building2, description: 'Organizations, locations, jobs, positions, grades, and departments.' },
-      { key: 'worker', label: 'Worker', icon: Users, description: 'Person records, employment, assignments, and work relationships.' },
-      { key: 'salary', label: 'Salary', icon: DollarSign, description: 'Salary basis, components, and compensation history.' },
-      { key: 'person_contact', label: 'Person Contact', icon: Contact, description: 'Emergency contacts, dependents, and beneficiaries.' },
+      {
+        key: 'workforce_structures',
+        label: 'Workforce Structures',
+        icon: Building2,
+        description: 'Organizations, locations, jobs, positions, grades, and departments.',
+        loadTitle: 'Workforce Structure',
+        loadInstructions: 'Manage the HCM Data Loader lifecycle for each workforce structure entity. Please load the objects in the displayed order to prevent data dependency errors.',
+        defaultEntities: ['Location', 'Job', 'Department', 'Grade'],
+      },
+      {
+        key: 'worker',
+        label: 'Worker',
+        icon: Users,
+        description: 'Person records, employment, assignments, and work relationships.',
+        loadTitle: 'Worker',
+        loadInstructions: 'Prepare and submit worker-related entities after the required foundation data has already been loaded.',
+        defaultEntities: ['Worker'],
+      },
+      {
+        key: 'salary',
+        label: 'Salary',
+        icon: DollarSign,
+        description: 'Salary basis, components, and compensation history.',
+        loadTitle: 'Salary',
+        loadInstructions: 'Generate and load salary data after the matching worker records are available in the target environment.',
+        defaultEntities: ['Salary'],
+      },
+      {
+        key: 'person_contact',
+        label: 'Person Contact',
+        icon: Contact,
+        description: 'Emergency contacts, dependents, and beneficiaries.',
+        loadTitle: 'Person Contact',
+        loadInstructions: 'Load person contact data only after the associated worker records are present in Oracle HCM Cloud.',
+        defaultEntities: ['Person Contact'],
+      },
     ],
   },
   {
@@ -61,12 +74,60 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
     gradientTo: '#1E6FBA',
     tagColor: '#93C5FD',
     objects: [
-      { key: 'person_payroll_detail', label: 'Person Payroll Detail', icon: FileText, description: 'Payroll assignments, frequencies, and payment methods.' },
-      { key: 'tax_withholding', label: 'Tax Withholding', icon: ClipboardList, description: 'Federal, state, and local tax withholding elections.' },
-      { key: 'element_definition', label: 'Element Definition', icon: Briefcase, description: 'Earnings, deductions, and information element definitions.' },
-      { key: 'bank_branch', label: 'Bank & Bank Branch', icon: Landmark, description: 'Bank accounts, branch codes, and routing details.' },
-      { key: 'payroll_time_card', label: 'Payroll Time Card', icon: Clock4, description: 'Time card entries for payroll processing.' },
-      { key: 'payroll_balances', label: 'Payroll Balances', icon: BarChart3, description: 'Year-to-date and period balance adjustments.' },
+      {
+        key: 'person_payroll_detail',
+        label: 'Person Payroll Detail',
+        icon: FileText,
+        description: 'Payroll assignments, frequencies, and payment methods.',
+        loadTitle: 'Person Payroll Detail',
+        loadInstructions: 'Submit payroll detail data after worker and payroll definitions have been established in the target environment.',
+        defaultEntities: ['Person Payroll Detail'],
+      },
+      {
+        key: 'tax_withholding',
+        label: 'Tax Withholding',
+        icon: ClipboardList,
+        description: 'Federal, state, and local tax withholding elections.',
+        loadTitle: 'Tax Withholding',
+        loadInstructions: 'Validate withholding records carefully before loading to avoid downstream payroll calculation issues.',
+        defaultEntities: ['Tax Withholding'],
+      },
+      {
+        key: 'element_definition',
+        label: 'Element Definition',
+        icon: Briefcase,
+        description: 'Earnings, deductions, and information element definitions.',
+        loadTitle: 'Element Definition',
+        loadInstructions: 'Load payroll elements before dependent payroll detail or balance records are submitted.',
+        defaultEntities: ['Element Definition'],
+      },
+      {
+        key: 'bank_branch',
+        label: 'Bank & Bank Branch',
+        icon: Landmark,
+        description: 'Bank accounts, branch codes, and routing details.',
+        loadTitle: 'Bank & Bank Branch',
+        loadInstructions: 'Create bank entities in sequence so branch definitions exist before any dependent payment configurations are loaded.',
+        defaultEntities: ['Bank', 'Bank Branch'],
+      },
+      {
+        key: 'payroll_time_card',
+        label: 'Payroll Time Card',
+        icon: Clock4,
+        description: 'Time card entries for payroll processing.',
+        loadTitle: 'Payroll Time Card',
+        loadInstructions: 'Time card loads should follow worker and schedule setup to keep time and payroll references aligned.',
+        defaultEntities: ['Payroll Time Card'],
+      },
+      {
+        key: 'payroll_balances',
+        label: 'Payroll Balances',
+        icon: BarChart3,
+        description: 'Year-to-date and period balance adjustments.',
+        loadTitle: 'Payroll Balances',
+        loadInstructions: 'Load payroll balances after the related payroll relationships and elements are already in place.',
+        defaultEntities: ['Payroll Balances'],
+      },
     ],
   },
   {
@@ -79,9 +140,33 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
     gradientTo: '#7C3AED',
     tagColor: '#C4B5FD',
     objects: [
-      { key: 'candidate', label: 'Candidate', icon: UserCheck, description: 'Candidate profiles, qualifications, and attachments.' },
-      { key: 'job_requisition', label: 'Job Requisition', icon: Briefcase, description: 'Open positions, hiring managers, and approval chains.' },
-      { key: 'candidate_job_application', label: 'Candidate Job Application', icon: ClipboardList, description: 'Applications, screening, and offer management.' },
+      {
+        key: 'candidate',
+        label: 'Candidate',
+        icon: UserCheck,
+        description: 'Candidate profiles, qualifications, and attachments.',
+        loadTitle: 'Candidate',
+        loadInstructions: 'Prepare candidate data with its related attachments and profile references before final submission.',
+        defaultEntities: ['Candidate'],
+      },
+      {
+        key: 'job_requisition',
+        label: 'Job Requisition',
+        icon: Briefcase,
+        description: 'Open positions, hiring managers, and approval chains.',
+        loadTitle: 'Job Requisition',
+        loadInstructions: 'Load requisition data before any dependent candidate application records to maintain clean recruitment links.',
+        defaultEntities: ['Job Requisition'],
+      },
+      {
+        key: 'candidate_job_application',
+        label: 'Candidate Job Application',
+        icon: ClipboardList,
+        description: 'Applications, screening, and offer management.',
+        loadTitle: 'Candidate Job Application',
+        loadInstructions: 'Candidate applications should be loaded only after the related candidate and requisition records are available.',
+        defaultEntities: ['Candidate Job Application'],
+      },
     ],
   },
   {
