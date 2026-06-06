@@ -180,6 +180,28 @@ function stripDataKeywords(value: string): string {
     .replace(/[_\-\s]+/g, '');
 }
 
+function tokenizeSheetName(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean)
+    .filter(token => ![
+      'template',
+      'mapping',
+      'config',
+      'rule',
+      'rules',
+      'data',
+      'input',
+      'upload',
+      'value',
+      'values',
+      'record',
+      'records',
+    ].includes(token));
+}
+
 function isTemplateSheet(rows: ExcelRow[]): boolean {
   if (rows.length === 0) {
     return false;
@@ -206,21 +228,32 @@ function findMatchingDataSheet(templateSheetName: string, dataSheetNames: string
 
   const normalizedTemplate = normalizeSheetName(templateSheetName);
   const simplifiedTemplate = stripTemplateKeywords(normalizedTemplate);
+  const templateTokens = tokenizeSheetName(templateSheetName);
 
   const rankedMatches = dataSheetNames
     .map(sheetName => {
       const normalizedData = normalizeSheetName(sheetName);
       const simplifiedData = stripDataKeywords(normalizedData);
+      const dataTokens = tokenizeSheetName(sheetName);
+      const sharedTokens = dataTokens.filter(token => templateTokens.includes(token));
 
       let score = 0;
       if (simplifiedData === simplifiedTemplate && simplifiedData !== '') {
-        score = 5;
+        score = 10;
+      } else if (
+        templateTokens.length > 0
+        && dataTokens.length > 0
+        && sharedTokens.length === Math.min(templateTokens.length, dataTokens.length)
+      ) {
+        score = 9;
       } else if (normalizedData === normalizedTemplate) {
-        score = 4;
+        score = 8;
+      } else if (sharedTokens.length > 0) {
+        score = 7;
       } else if (simplifiedData && simplifiedTemplate && normalizedData.includes(simplifiedTemplate)) {
-        score = 3;
+        score = 6;
       } else if (simplifiedData && simplifiedTemplate && simplifiedTemplate.includes(simplifiedData)) {
-        score = 2;
+        score = 5;
       } else if (dataSheetNames.length === 1) {
         score = 1;
       }
@@ -322,15 +355,24 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
   const entityDataSheetNames: Record<string, string> = {};
 
   if (templateSheetNames.length > 0) {
-    templateSheetNames.forEach(templateSheetName => {
+    const unusedDataSheetNames = new Set(dataSheetNames);
+
+    templateSheetNames.forEach((templateSheetName, index) => {
       const rules = (worksheetRowsByName.get(templateSheetName) ?? []) as MappingRule[];
-      const dataSheetName = findMatchingDataSheet(templateSheetName, dataSheetNames);
+      const availableDataSheetNames = dataSheetNames.filter(sheetName => unusedDataSheetNames.has(sheetName));
+      const rankedDataSheetName = findMatchingDataSheet(templateSheetName, availableDataSheetNames);
+      const fallbackDataSheetName = availableDataSheetNames[index] ?? availableDataSheetNames[0] ?? null;
+      const dataSheetName = rankedDataSheetName ?? fallbackDataSheetName;
 
       mappingConfigs[templateSheetName] = rules;
       entityDataSheetNames[templateSheetName] = dataSheetName ?? '';
       excelData[templateSheetName] = dataSheetName
         ? (worksheetRowsByName.get(dataSheetName) ?? [])
         : [];
+
+      if (dataSheetName) {
+        unusedDataSheetNames.delete(dataSheetName);
+      }
     });
 
     return {

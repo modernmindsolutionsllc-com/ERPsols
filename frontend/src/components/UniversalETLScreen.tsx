@@ -43,6 +43,47 @@ function getDefaultEntityNames(object: BusinessObject): string[] {
     : [object.label];
 }
 
+function normalizeHeader(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function getMissingMappedColumns(sheetData: ExcelRow[], sheetConfig: MappingRule[]): string[] {
+  if (sheetData.length === 0) {
+    return [];
+  }
+
+  const headerLookup = new Set(Object.keys(sheetData[0] ?? {}).map(normalizeHeader));
+
+  return sheetConfig
+    .filter(rule => {
+      const columnOrder = typeof rule.ColumnOrder === 'string' ? rule.ColumnOrder.trim().toUpperCase() : '';
+      return columnOrder.startsWith('B');
+    })
+    .filter(rule => {
+      const hdlValue = String(rule.HDL ?? '').trim().toUpperCase();
+      return hdlValue === '' || hdlValue === 'NULL';
+    })
+    .map(rule => typeof rule.InputColumnName === 'string' ? rule.InputColumnName.trim() : '')
+    .filter(Boolean)
+    .filter((columnName, index, allColumns) => allColumns.indexOf(columnName) === index)
+    .filter(columnName => !headerLookup.has(normalizeHeader(columnName)));
+}
+
+function downloadTextFile(filename: string, content: string): void {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 
 export function UniversalETLScreen({ module, object, onBack }: UniversalETLScreenProps) {
   const [currentStep, setCurrentStep] = useState<ETLStep>('upload');
@@ -51,8 +92,9 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<'success' | 'error' | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [totalRecords] = useState(5);
-  const [passedRecords] = useState(5);
+  const [validationReportContent, setValidationReportContent] = useState('');
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [passedRecords, setPassedRecords] = useState(0);
   const [excelData, setExcelData] = useState<Record<string, ExcelRow[]>>({});
   const [mappingConfigs, setMappingConfigs] = useState<Record<string, MappingRule[]>>({});
   const [entityDataSheetNames, setEntityDataSheetNames] = useState<Record<string, string>>({});
@@ -69,7 +111,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   }, [dynamicEntities]);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
-  const successPercentage = Math.round((passedRecords / totalRecords) * 100);
+  const successPercentage = totalRecords > 0 ? Math.round((passedRecords / totalRecords) * 100) : 0;
 
   // ── Drag & Drop handlers ──
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -105,51 +147,127 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     }
   }, []);
 
-  // ── Mock Actions ──
   const handleValidate = useCallback(async () => {
+    if (!file) {
+      toast.error('Please upload an Excel workbook first.');
+      return;
+    }
+
     setIsValidating(true);
     setCurrentStep('validate');
     setValidationResult(null);
     setValidationErrors([]);
+    setValidationReportContent('');
+    setTotalRecords(0);
+    setPassedRecords(0);
 
-    // Simulate network delay
-    await new Promise(r => setTimeout(r, 2200));
+    try {
+      await new Promise(resolve => setTimeout(resolve, 350));
 
-    // Mock: 85% chance of success
-    const success = Math.random() > 0.15;
-    if (success) {
-      setValidationResult('success');
-      setValidationErrors([]);
+      const parsedWorkbook = await parseWorkbookForConversion(file);
+      const issues: string[] = [];
+      const reportLines: string[] = [
+        'Validation Report',
+        `Workbook: ${file.name}`,
+        `Business Object: ${object.label}`,
+        '',
+      ];
 
-      if (file) {
-        try {
-          const parsedWorkbook = await parseWorkbookForConversion(file);
-          setExcelData(parsedWorkbook.excelData);
-          setMappingConfigs(parsedWorkbook.mappingConfigs);
-          setEntityDataSheetNames(parsedWorkbook.entityDataSheetNames);
-          setDynamicEntities(parsedWorkbook.entityNames);
-        } catch (err) {
-          console.error('Error reading xlsx sheets:', err);
-          setDynamicEntities(getDefaultEntityNames(object));
-          toast.warning('Workbook parsing failed. Falling back to the default entity order for this object.');
+      let computedTotalRecords = 0;
+      let computedPassedRecords = 0;
+
+      parsedWorkbook.entityNames.forEach(entityName => {
+        const sheetConfig = parsedWorkbook.mappingConfigs[entityName] || [];
+        const sheetData = parsedWorkbook.excelData[entityName] || [];
+        const dataSheetName = parsedWorkbook.entityDataSheetNames[entityName];
+        const missingColumns = getMissingMappedColumns(sheetData, sheetConfig);
+
+        computedTotalRecords += sheetData.length;
+
+        reportLines.push(`Template Sheet: ${entityName}`);
+        reportLines.push(`Data Sheet: ${dataSheetName || 'Not matched'}`);
+        reportLines.push(`Rows Found: ${sheetData.length}`);
+
+        if (sheetConfig.length === 0) {
+          issues.push(`Template sheet "${entityName}" has no mapping rules.`);
+          reportLines.push('Status: Failed');
+          reportLines.push('Issue: No mapping rules found.');
+          reportLines.push('');
+          return;
         }
+
+        if (!dataSheetName) {
+          issues.push(`Template sheet "${entityName}" could not be matched to a data sheet.`);
+          reportLines.push('Status: Failed');
+          reportLines.push('Issue: No paired data sheet found.');
+          reportLines.push('');
+          return;
+        }
+
+        if (sheetData.length === 0) {
+          issues.push(`Data sheet "${dataSheetName}" has no rows to prepare.`);
+          reportLines.push('Status: Failed');
+          reportLines.push('Issue: No data rows found.');
+          reportLines.push('');
+          return;
+        }
+
+        if (missingColumns.length > 0) {
+          issues.push(`Data sheet "${dataSheetName}" is missing mapped columns: ${missingColumns.join(', ')}.`);
+          reportLines.push('Status: Failed');
+          reportLines.push(`Issue: Missing mapped columns -> ${missingColumns.join(', ')}`);
+          reportLines.push('');
+          return;
+        }
+
+        computedPassedRecords += sheetData.length;
+        reportLines.push('Status: Passed');
+        reportLines.push('Issue: None');
+        reportLines.push('');
+      });
+
+      setExcelData(parsedWorkbook.excelData);
+      setMappingConfigs(parsedWorkbook.mappingConfigs);
+      setEntityDataSheetNames(parsedWorkbook.entityDataSheetNames);
+      setDynamicEntities(parsedWorkbook.entityNames);
+      setTotalRecords(computedTotalRecords);
+      setPassedRecords(computedPassedRecords);
+      setValidationReportContent(reportLines.join('\n'));
+
+      if (issues.length > 0) {
+        setValidationResult('error');
+        setValidationErrors(issues);
       } else {
-        setDynamicEntities(getDefaultEntityNames(object));
+        setValidationResult('success');
+        setValidationErrors([]);
       }
-    } else {
+    } catch (err) {
+      console.error('Error validating workbook:', err);
+      const message = err instanceof Error ? err.message : 'Failed to read the uploaded workbook.';
       setValidationResult('error');
-      setValidationErrors([
-        'Row 14: Missing required field "Person Number".',
-        'Row 27: Invalid date format in "Effective Start Date".',
-      ]);
+      setValidationErrors([message]);
+      setDynamicEntities(getDefaultEntityNames(object));
+      setValidationReportContent([
+        'Validation Report',
+        `Workbook: ${file.name}`,
+        '',
+        `Issue: ${message}`,
+      ].join('\n'));
+    } finally {
+      setIsValidating(false);
     }
-    setIsValidating(false);
   }, [file, object]);
 
   const handleDownloadReport = useCallback(() => {
-    console.log('Downloading validation report...');
-    alert('Download Validation Report: Report generated successfully.');
-  }, []);
+    if (!validationReportContent) {
+      toast.error('No validation report is available yet.');
+      return;
+    }
+
+    const safeObjectName = object.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    downloadTextFile(`${safeObjectName}-validation-report.txt`, validationReportContent);
+    toast.success('Validation report downloaded successfully.');
+  }, [object.label, validationReportContent]);
 
   const handleDeploy = useCallback(() => {
     setCurrentStep('load');
@@ -207,6 +325,9 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setCurrentStep('upload');
     setValidationResult(null);
     setValidationErrors([]);
+    setValidationReportContent('');
+    setTotalRecords(0);
+    setPassedRecords(0);
     setExcelData({});
     setMappingConfigs({});
     setEntityDataSheetNames({});
@@ -426,7 +547,9 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Validation Passed</p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400">{successPercentage}% of records passed schema checks. No errors found.</p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      {successPercentage}% of records passed schema checks. {passedRecords} of {totalRecords} row(s) are ready.
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-3 mt-6">
@@ -456,7 +579,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-red-800 dark:text-red-300">Validation Failed</p>
-                    <p className="text-xs text-red-600 dark:text-red-400">{validationErrors.length} error(s) found. Fix and re-upload.</p>
+                    <p className="text-xs text-red-600 dark:text-red-400">{validationErrors.length} validation issue(s) found. Fix and re-upload.</p>
                   </div>
                 </div>
                 <ul className="space-y-2 mb-6">
@@ -522,6 +645,8 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                   const isPending = entity.lifecycleState === 'pending';
                   const isPrepared = entity.lifecycleState === 'prepared';
                   const isSubmitted = entity.lifecycleState === 'submitted';
+                  const matchedDataSheetName = entityDataSheetNames[entity.name];
+                  const matchedRowCount = excelData[entity.name]?.length ?? 0;
 
                   return (
                     <div
@@ -533,9 +658,16 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                         <span className="text-sm font-mono text-slate-400 dark:text-slate-500">
                           {(index + 1).toString().padStart(2, '0')}
                         </span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {entity.name}
-                        </span>
+                        <div>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {entity.name}
+                          </span>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {matchedDataSheetName
+                              ? `Data sheet: ${matchedDataSheetName} | Rows found: ${matchedRowCount}`
+                              : 'No data sheet matched yet'}
+                          </p>
+                        </div>
                       </div>
 
                       {/* Right Side: Button Group */}
