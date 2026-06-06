@@ -23,6 +23,7 @@ export interface ParsedWorkbookData {
   entityNames: string[];
   excelData: Record<string, ExcelRow[]>;
   mappingConfigs: Record<string, MappingRule[]>;
+  entityDataSheetNames: Record<string, string>;
 }
 
 export interface BusinessObject {

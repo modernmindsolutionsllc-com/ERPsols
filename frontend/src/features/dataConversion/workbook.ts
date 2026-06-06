@@ -154,14 +154,102 @@ function getSortedRulesByPrefix(rules: MappingRule[], prefix: string): MappingRu
     });
 }
 
-function buildMockRow(rules: MappingRule[]): ExcelRow {
-  return rules.reduce<ExcelRow>((row, rule) => {
-    const inputColumnName = typeof rule.InputColumnName === 'string' ? rule.InputColumnName.trim() : '';
-    if (inputColumnName && !isNullLikeValue(inputColumnName)) {
-      row[inputColumnName] = inputColumnName;
-    }
-    return row;
-  }, {});
+function normalizeHeader(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeSheetName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function stripTemplateKeywords(value: string): string {
+  return value
+    .replace(/template|mapping|config|rule|rules/gi, '')
+    .replace(/[_\-\s]+/g, '');
+}
+
+function stripDataKeywords(value: string): string {
+  return value
+    .replace(/data|input|upload|value|values|record|records/gi, '')
+    .replace(/[_\-\s]+/g, '');
+}
+
+function isTemplateSheet(rows: ExcelRow[]): boolean {
+  if (rows.length === 0) {
+    return false;
+  }
+
+  const headers = Object.keys(rows[0] ?? {}).map(normalizeHeader);
+  const requiredHeaders = ['columnorder', 'hdl', 'inputcolumnname'];
+
+  return requiredHeaders.every(header => headers.includes(header));
+}
+
+function parseWorksheetRows<T extends Record<string, unknown>>(worksheet: XLSX.WorkSheet): T[] {
+  return XLSX.utils.sheet_to_json<T>(worksheet, {
+    defval: '',
+    raw: false,
+    dateNF: 'yyyy-mm-dd',
+  });
+}
+
+function findMatchingDataSheet(templateSheetName: string, dataSheetNames: string[]): string | null {
+  if (dataSheetNames.length === 0) {
+    return null;
+  }
+
+  const normalizedTemplate = normalizeSheetName(templateSheetName);
+  const simplifiedTemplate = stripTemplateKeywords(normalizedTemplate);
+
+  const rankedMatches = dataSheetNames
+    .map(sheetName => {
+      const normalizedData = normalizeSheetName(sheetName);
+      const simplifiedData = stripDataKeywords(normalizedData);
+
+      let score = 0;
+      if (simplifiedData === simplifiedTemplate && simplifiedData !== '') {
+        score = 5;
+      } else if (normalizedData === normalizedTemplate) {
+        score = 4;
+      } else if (simplifiedData && simplifiedTemplate && normalizedData.includes(simplifiedTemplate)) {
+        score = 3;
+      } else if (simplifiedData && simplifiedTemplate && simplifiedTemplate.includes(simplifiedData)) {
+        score = 2;
+      } else if (dataSheetNames.length === 1) {
+        score = 1;
+      }
+
+      return { sheetName, score };
+    })
+    .filter(match => match.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  return rankedMatches[0]?.sheetName ?? null;
+}
+
+function createHeaderLookup(row: ExcelRow): Map<string, string> {
+  const lookup = new Map<string, string>();
+
+  Object.keys(row).forEach(key => {
+    lookup.set(normalizeHeader(key), key);
+  });
+
+  return lookup;
+}
+
+function resolveRowValue(row: ExcelRow, headerLookup: Map<string, string>, inputColumnName: string): unknown {
+  const exactKey = headerLookup.get(normalizeHeader(inputColumnName));
+  if (exactKey) {
+    return row[exactKey];
+  }
+
+  return row[inputColumnName];
 }
 
 function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
@@ -207,28 +295,67 @@ export function createEntitiesFromNames(entityNames: string[]): Entity[] {
 
 export async function parseWorkbookForConversion(file: File): Promise<ParsedWorkbookData> {
   const workbookData = await readFileAsArrayBuffer(file);
-  const workbook = XLSX.read(workbookData, { type: 'array' });
-  const entityNames = workbook.SheetNames.filter(name => !name.toLowerCase().includes('sheet'));
-  const finalEntityNames = entityNames.length > 0 ? entityNames : workbook.SheetNames;
+  const workbook = XLSX.read(workbookData, { type: 'array', cellDates: true });
+  const templateSheetNames: string[] = [];
+  const dataSheetNames: string[] = [];
+  const worksheetRowsByName = new Map<string, ExcelRow[]>();
 
-  const excelData: Record<string, ExcelRow[]> = {};
-  const mappingConfigs: Record<string, MappingRule[]> = {};
-
-  finalEntityNames.forEach(entityName => {
-    const worksheet = workbook.Sheets[entityName];
+  workbook.SheetNames.forEach(sheetName => {
+    const worksheet = workbook.Sheets[sheetName];
     if (!worksheet) {
       return;
     }
 
-    const rules = XLSX.utils.sheet_to_json<MappingRule>(worksheet, { defval: null });
-    mappingConfigs[entityName] = rules;
-    excelData[entityName] = [buildMockRow(getSortedRulesByPrefix(rules, 'B'))];
+    const rows = parseWorksheetRows<ExcelRow>(worksheet);
+    worksheetRowsByName.set(sheetName, rows);
+
+    if (isTemplateSheet(rows)) {
+      templateSheetNames.push(sheetName);
+      return;
+    }
+
+    dataSheetNames.push(sheetName);
+  });
+
+  const excelData: Record<string, ExcelRow[]> = {};
+  const mappingConfigs: Record<string, MappingRule[]> = {};
+  const entityDataSheetNames: Record<string, string> = {};
+
+  if (templateSheetNames.length > 0) {
+    templateSheetNames.forEach(templateSheetName => {
+      const rules = (worksheetRowsByName.get(templateSheetName) ?? []) as MappingRule[];
+      const dataSheetName = findMatchingDataSheet(templateSheetName, dataSheetNames);
+
+      mappingConfigs[templateSheetName] = rules;
+      entityDataSheetNames[templateSheetName] = dataSheetName ?? '';
+      excelData[templateSheetName] = dataSheetName
+        ? (worksheetRowsByName.get(dataSheetName) ?? [])
+        : [];
+    });
+
+    return {
+      entityNames: templateSheetNames,
+      excelData,
+      mappingConfigs,
+      entityDataSheetNames,
+    };
+  }
+
+  const entityNames = workbook.SheetNames.filter(name => !name.toLowerCase().includes('sheet'));
+  const finalEntityNames = entityNames.length > 0 ? entityNames : workbook.SheetNames;
+
+  finalEntityNames.forEach(entityName => {
+    const rows = worksheetRowsByName.get(entityName) ?? [];
+    mappingConfigs[entityName] = rows as MappingRule[];
+    excelData[entityName] = rows;
+    entityDataSheetNames[entityName] = entityName;
   });
 
   return {
     entityNames: finalEntityNames,
     excelData,
     mappingConfigs,
+    entityDataSheetNames,
   };
 }
 
@@ -246,23 +373,26 @@ export function buildDatContent(sheetData: ExcelRow[], sheetConfig: MappingRule[
     })
     .join('|');
 
-  const bLines = sheetData.map(row =>
-    getSortedRulesByPrefix(sheetConfig, 'B')
+  const bRules = getSortedRulesByPrefix(sheetConfig, 'B');
+  const bLines = sheetData.map(row => {
+    const headerLookup = createHeaderLookup(row);
+
+    return bRules
       .map(rule => {
         if (!isNullLikeValue(rule.HDL)) {
           return String(rule.HDL).trim();
         }
 
-        const inputColumnName = typeof rule.InputColumnName === 'string' ? rule.InputColumnName : '';
+        const inputColumnName = typeof rule.InputColumnName === 'string' ? rule.InputColumnName.trim() : '';
         if (!inputColumnName) {
           return '';
         }
 
-        const value = row[inputColumnName];
-        return value === null || value === undefined ? '' : String(value);
+        const value = resolveRowValue(row, headerLookup, inputColumnName);
+        return value === null || value === undefined ? '' : String(value).trim();
       })
-      .join('|')
-  );
+      .join('|');
+  });
 
   return [aLine, ...bLines].join('\n');
 }

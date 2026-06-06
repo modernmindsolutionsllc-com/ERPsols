@@ -12,7 +12,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Upload, CheckCircle2, FileSpreadsheet, Loader2,
-  ArrowLeft, AlertCircle, Rocket, X, FileUp, Download,
+  ArrowLeft, AlertCircle, Rocket, X, FileUp, Download, FileText,
 } from 'lucide-react';
 import type { ModuleConfig, BusinessObject, Entity, ExcelRow, MappingRule } from '@/features/dataConversion/types';
 import {
@@ -55,7 +55,10 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   const [passedRecords] = useState(5);
   const [excelData, setExcelData] = useState<Record<string, ExcelRow[]>>({});
   const [mappingConfigs, setMappingConfigs] = useState<Record<string, MappingRule[]>>({});
+  const [entityDataSheetNames, setEntityDataSheetNames] = useState<Record<string, string>>({});
   const [dynamicEntities, setDynamicEntities] = useState<string[]>([]);
+  const [preparedOutputByEntityId, setPreparedOutputByEntityId] = useState<Record<string, string>>({});
+  const [activePreviewEntityId, setActivePreviewEntityId] = useState<string | null>(null);
   const [entities, setEntities] = useState<Entity[]>(() => createEntitiesFromNames(getDefaultEntityNames(object)));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -123,6 +126,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
           const parsedWorkbook = await parseWorkbookForConversion(file);
           setExcelData(parsedWorkbook.excelData);
           setMappingConfigs(parsedWorkbook.mappingConfigs);
+          setEntityDataSheetNames(parsedWorkbook.entityDataSheetNames);
           setDynamicEntities(parsedWorkbook.entityNames);
         } catch (err) {
           console.error('Error reading xlsx sheets:', err);
@@ -160,9 +164,21 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       return;
     }
 
+    if (sheetData.length === 0) {
+      const dataSheetName = entityDataSheetNames[name];
+      toast.error(
+        dataSheetName
+          ? `No data rows found in sheet: ${dataSheetName}`
+          : `No paired data sheet found for template: ${name}`
+      );
+      return;
+    }
+
     try {
       const datContent = buildDatContent(sheetData, sheetConfig);
       await downloadEntityArchive(name, datContent);
+      setPreparedOutputByEntityId(prev => ({ ...prev, [id]: datContent }));
+      setActivePreviewEntityId(id);
 
       setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'prepared' } : e));
       toast.success(`${name}.zip prepared and downloaded successfully!`);
@@ -170,7 +186,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
       console.error('HDL generation or zipping failed:', err);
       toast.error(`Failed to prepare entity ${name}.`);
     }
-  }, [excelData, mappingConfigs]);
+  }, [entityDataSheetNames, excelData, mappingConfigs]);
 
   const handleSubmit = useCallback((id: string) => {
     setEntities(prev => prev.map(e => e.id === id ? { ...e, lifecycleState: 'submitted' } : e));
@@ -178,8 +194,13 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
   }, []);
 
   const handleViewStatus = useCallback((id: string) => {
-    toast.info(`Viewing status logs for entity: ${id}`);
-  }, []);
+    if (!preparedOutputByEntityId[id]) {
+      toast.info('Prepare the entity first to preview the generated output.');
+      return;
+    }
+
+    setActivePreviewEntityId(id);
+  }, [preparedOutputByEntityId]);
 
   const handleReset = useCallback(() => {
     setFile(null);
@@ -188,11 +209,17 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
     setValidationErrors([]);
     setExcelData({});
     setMappingConfigs({});
+    setEntityDataSheetNames({});
     setDynamicEntities([]);
+    setPreparedOutputByEntityId({});
+    setActivePreviewEntityId(null);
     setEntities(createEntitiesFromNames(getDefaultEntityNames(object)));
   }, [object]);
 
   const ObjectIcon = object.icon;
+  const activePreviewEntity = entities.find(entity => entity.id === activePreviewEntityId) ?? null;
+  const activePreviewOutput = activePreviewEntityId ? preparedOutputByEntityId[activePreviewEntityId] : null;
+  const activePreviewSheetName = activePreviewEntity ? entityDataSheetNames[activePreviewEntity.name] : '';
 
   return (
     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
@@ -562,13 +589,40 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700/50'
                           }`}
                         >
-                          <span>Status Log</span>
+                          <span>Preview Output</span>
                         </button>
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {activePreviewEntity && activePreviewOutput && (
+                <div className="mt-6 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/60 overflow-hidden">
+                  <div className="flex flex-col gap-2 border-b border-slate-200 dark:border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        <FileText size={16} className="text-emerald-600 dark:text-emerald-400" />
+                        Generated DAT Preview
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Template: <span className="font-medium text-slate-700 dark:text-slate-300">{activePreviewEntity.name}</span>
+                        {activePreviewSheetName ? (
+                          <>
+                            {' '}| Data sheet: <span className="font-medium text-slate-700 dark:text-slate-300">{activePreviewSheetName}</span>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                      Excel values mapped into HDL output
+                    </div>
+                  </div>
+                  <pre className="max-h-[320px] overflow-auto px-5 py-4 text-xs leading-6 text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 whitespace-pre-wrap break-all">
+                    {activePreviewOutput}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         )}
