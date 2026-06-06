@@ -112,15 +112,15 @@ def _decrypt_credential(credential: OracleCredential) -> tuple[str, str, str]:
 
 
 def _effective_sql_text(cfg: BipReportConfig) -> str | None:
-    """Prefer plain-text sql_query; otherwise try Fernet-encrypted_sql_query."""
-    if cfg.sql_query and str(cfg.sql_query).strip():
-        return str(cfg.sql_query).strip()
+    """Prefer Fernet-encrypted SQL; fall back to legacy plain-text sql_query."""
     if cfg.encrypted_sql_query:
         try:
             plain = decrypt_password(cfg.encrypted_sql_query).strip()
             return plain or None
         except Exception:
-            return None
+            pass
+    if cfg.sql_query and str(cfg.sql_query).strip():
+        return str(cfg.sql_query).strip()
     return None
 
 
