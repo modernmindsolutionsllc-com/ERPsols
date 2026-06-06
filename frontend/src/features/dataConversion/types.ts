@@ -24,6 +24,28 @@ export interface ParsedWorkbookData {
   excelData: Record<string, ExcelRow[]>;
   mappingConfigs: Record<string, MappingRule[]>;
   entityDataSheetNames: Record<string, string>;
+  mode: 'mapping' | 'mapping_only' | 'data_only';
+}
+
+export interface AutoMappingColumn {
+  outputField: string;
+  sourceAliases?: string[];
+  fixedValue?: string;
+  required?: boolean;
+}
+
+export interface AutoMappingTemplate {
+  entityPatterns?: string[];
+  headerPrefix: string[];
+  dataPrefix: string[];
+  columns: AutoMappingColumn[];
+}
+
+export interface ResolvedAutoMappingField {
+  outputField: string;
+  sourceHeader?: string;
+  fixedValue?: string;
+  status: 'mapped' | 'fixed' | 'missing';
 }
 
 export interface BusinessObject {
@@ -34,6 +56,7 @@ export interface BusinessObject {
   loadTitle?: string;
   loadInstructions?: string;
   defaultEntities?: string[];
+  autoMappingTemplates?: AutoMappingTemplate[];
 }
 
 export interface ModuleConfig {

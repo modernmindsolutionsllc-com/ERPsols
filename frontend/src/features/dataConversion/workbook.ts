@@ -1,8 +1,20 @@
 import * as XLSX from 'xlsx';
 
-import type { Entity, ExcelRow, MappingRule, ParsedWorkbookData } from '@/features/dataConversion/types';
+import type {
+  AutoMappingTemplate,
+  Entity,
+  ExcelRow,
+  MappingRule,
+  ParsedWorkbookData,
+  ResolvedAutoMappingField,
+} from '@/features/dataConversion/types';
 
 const TEMPLATE_REQUIRED_HEADERS = ['columnorder', 'hdl', 'inputcolumnname'];
+
+interface ParsedTemplateSection {
+  dataRows: ExcelRow[];
+  mappingRows: MappingRule[];
+}
 
 function normalizeEntityId(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '_');
@@ -163,6 +175,14 @@ function normalizeHeader(value: unknown): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function toCellText(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function isRowBlank(row: unknown[]): boolean {
+  return row.every(cell => toCellText(cell) === '');
+}
+
 function normalizeSheetName(value: string): string {
   return value
     .trim()
@@ -227,7 +247,53 @@ function findTemplateHeaderRowIndex(matrix: unknown[][]): number | null {
   return null;
 }
 
-function parseTemplateWorksheetRows(worksheet: XLSX.WorkSheet): MappingRule[] | null {
+function buildHeaderIndexMap(headerRow: unknown[]): Record<string, number> {
+  return headerRow.reduce<Record<string, number>>((accumulator, cell, index) => {
+    const normalized = normalizeHeader(cell);
+    if (normalized && accumulator[normalized] === undefined) {
+      accumulator[normalized] = index;
+    }
+    return accumulator;
+  }, {});
+}
+
+function isMappingDataRow(row: unknown[], headerIndexMap: Record<string, number>): boolean {
+  const columnOrderIndex = headerIndexMap.columnorder;
+  if (columnOrderIndex === undefined) {
+    return false;
+  }
+
+  const columnOrderValue = toCellText(row[columnOrderIndex]);
+  return /^[AB]\d+$/i.test(columnOrderValue);
+}
+
+function parseDataSection(matrix: unknown[][], dataHeaderRowIndex: number): ExcelRow[] {
+  const headerRow = matrix[dataHeaderRowIndex] ?? [];
+  const headers = headerRow.map(toCellText);
+  const rows: ExcelRow[] = [];
+
+  for (let rowIndex = dataHeaderRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex] ?? [];
+    if (isRowBlank(row)) {
+      break;
+    }
+
+    const record = headers.reduce<ExcelRow>((accumulator, header, index) => {
+      if (header) {
+        accumulator[header] = toCellText(row[index]);
+      }
+      return accumulator;
+    }, {});
+
+    if (Object.keys(record).length > 0) {
+      rows.push(record);
+    }
+  }
+
+  return rows;
+}
+
+function parseTemplateWorksheetSections(worksheet: XLSX.WorkSheet): ParsedTemplateSection | null {
   const matrix = getWorksheetMatrix(worksheet);
   const headerRowIndex = findTemplateHeaderRowIndex(matrix);
 
@@ -235,14 +301,49 @@ function parseTemplateWorksheetRows(worksheet: XLSX.WorkSheet): MappingRule[] | 
     return null;
   }
 
-  const rows = XLSX.utils.sheet_to_json<MappingRule>(worksheet, {
-    range: headerRowIndex,
-    defval: '',
-    raw: false,
-    dateNF: 'yyyy-mm-dd',
-  });
+  const headerIndexMap = buildHeaderIndexMap(matrix[headerRowIndex] ?? []);
+  const mappingRows: MappingRule[] = [];
+  let lastMappingRowIndex = headerRowIndex;
 
-  return rows.length > 0 ? rows : null;
+  for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex] ?? [];
+
+    if (isRowBlank(row)) {
+      lastMappingRowIndex = rowIndex;
+      break;
+    }
+
+    if (!isMappingDataRow(row, headerIndexMap)) {
+      break;
+    }
+
+    mappingRows.push({
+      ColumnOrder: toCellText(row[headerIndexMap.columnorder]),
+      HDL: headerIndexMap.hdl !== undefined ? toCellText(row[headerIndexMap.hdl]) : '',
+      InputColumnName: headerIndexMap.inputcolumnname !== undefined ? toCellText(row[headerIndexMap.inputcolumnname]) : '',
+    });
+    lastMappingRowIndex = rowIndex;
+  }
+
+  if (mappingRows.length === 0) {
+    return null;
+  }
+
+  let dataHeaderRowIndex: number | null = null;
+  for (let rowIndex = lastMappingRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex] ?? [];
+    if (!isRowBlank(row)) {
+      dataHeaderRowIndex = rowIndex;
+      break;
+    }
+  }
+
+  const dataRows = dataHeaderRowIndex === null ? [] : parseDataSection(matrix, dataHeaderRowIndex);
+
+  return {
+    mappingRows,
+    dataRows,
+  };
 }
 
 function parseWorksheetRows<T extends Record<string, unknown>>(worksheet: XLSX.WorkSheet): T[] {
@@ -317,6 +418,131 @@ function resolveRowValue(row: ExcelRow, headerLookup: Map<string, string>, input
   return row[inputColumnName];
 }
 
+function findMatchingAutoMappingTemplate(
+  entityName: string,
+  templates: AutoMappingTemplate[]
+): AutoMappingTemplate | null {
+  const entityTokens = tokenizeSheetName(entityName);
+
+  return templates.find(template => {
+    if (!template.entityPatterns || template.entityPatterns.length === 0) {
+      return true;
+    }
+
+    return template.entityPatterns.some(pattern => {
+      const normalizedPattern = normalizeHeader(pattern);
+      return entityTokens.some(token => normalizeHeader(token) === normalizedPattern)
+        || normalizeHeader(entityName).includes(normalizedPattern);
+    });
+  }) ?? null;
+}
+
+function resolveSourceHeader(row: ExcelRow, aliases: string[]): string | undefined {
+  const headerLookup = createHeaderLookup(row);
+
+  for (const alias of aliases) {
+    const match = headerLookup.get(normalizeHeader(alias));
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
+}
+
+export function buildAutoGeneratedMapping(
+  entityName: string,
+  sheetData: ExcelRow[],
+  templates: AutoMappingTemplate[]
+): { rules: MappingRule[]; fields: ResolvedAutoMappingField[]; missingHeaders: string[] } | null {
+  if (sheetData.length === 0 || templates.length === 0) {
+    return null;
+  }
+
+  const template = findMatchingAutoMappingTemplate(entityName, templates);
+  if (!template) {
+    return null;
+  }
+
+  const rules: MappingRule[] = [];
+  const fields: ResolvedAutoMappingField[] = [];
+  const missingHeaders: string[] = [];
+
+  template.headerPrefix.forEach((value, index) => {
+    rules.push({
+      ColumnOrder: `A${index + 1}`,
+      HDL: value,
+      InputColumnName: '',
+    });
+  });
+
+  template.dataPrefix.forEach((value, index) => {
+    rules.push({
+      ColumnOrder: `B${index + 1}`,
+      HDL: value,
+      InputColumnName: '',
+    });
+  });
+
+  template.columns.forEach((column, index) => {
+    const orderOffset = template.headerPrefix.length + index + 1;
+    rules.push({
+      ColumnOrder: `A${orderOffset}`,
+      HDL: column.outputField,
+      InputColumnName: '',
+    });
+
+    if (column.fixedValue !== undefined) {
+      rules.push({
+        ColumnOrder: `B${template.dataPrefix.length + index + 1}`,
+        HDL: column.fixedValue,
+        InputColumnName: '',
+      });
+      fields.push({
+        outputField: column.outputField,
+        fixedValue: column.fixedValue,
+        status: 'fixed',
+      });
+      return;
+    }
+
+    const aliases = column.sourceAliases && column.sourceAliases.length > 0
+      ? column.sourceAliases
+      : [column.outputField];
+    const sourceHeader = resolveSourceHeader(sheetData[0], aliases);
+
+    rules.push({
+      ColumnOrder: `B${template.dataPrefix.length + index + 1}`,
+      HDL: '',
+      InputColumnName: sourceHeader ?? aliases[0],
+    });
+
+    if (sourceHeader) {
+      fields.push({
+        outputField: column.outputField,
+        sourceHeader,
+        status: 'mapped',
+      });
+      return;
+    }
+
+    if (column.required !== false) {
+      missingHeaders.push(aliases[0]);
+    }
+    fields.push({
+      outputField: column.outputField,
+      sourceHeader: aliases[0],
+      status: 'missing',
+    });
+  });
+
+  return {
+    rules,
+    fields,
+    missingHeaders,
+  };
+}
+
 function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -358,13 +584,17 @@ export function createEntitiesFromNames(entityNames: string[]): Entity[] {
     }));
 }
 
-export async function parseWorkbookForConversion(file: File): Promise<ParsedWorkbookData> {
+export async function parseWorkbookForConversion(
+  file: File,
+  options?: { allowDataOnly?: boolean }
+): Promise<ParsedWorkbookData> {
   const workbookData = await readFileAsArrayBuffer(file);
   const workbook = XLSX.read(workbookData, { type: 'array', cellDates: true });
   const templateSheetNames: string[] = [];
   const dataSheetNames: string[] = [];
   const worksheetRowsByName = new Map<string, ExcelRow[]>();
   const templateRowsByName = new Map<string, MappingRule[]>();
+  const inlineDataRowsByTemplateName = new Map<string, ExcelRow[]>();
 
   workbook.SheetNames.forEach(sheetName => {
     const worksheet = workbook.Sheets[sheetName];
@@ -372,9 +602,10 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
       return;
     }
 
-    const templateRows = parseTemplateWorksheetRows(worksheet);
-    if (templateRows) {
-      templateRowsByName.set(sheetName, templateRows);
+    const parsedTemplateSection = parseTemplateWorksheetSections(worksheet);
+    if (parsedTemplateSection) {
+      templateRowsByName.set(sheetName, parsedTemplateSection.mappingRows);
+      inlineDataRowsByTemplateName.set(sheetName, parsedTemplateSection.dataRows);
       templateSheetNames.push(sheetName);
       return;
     }
@@ -391,22 +622,31 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
 
   if (templateSheetNames.length > 0) {
     const unusedDataSheetNames = new Set(dataSheetNames);
+    let hasAnyResolvedDataRows = false;
 
     templateSheetNames.forEach((templateSheetName, index) => {
       const rules = templateRowsByName.get(templateSheetName) ?? [];
+      const inlineDataRows = inlineDataRowsByTemplateName.get(templateSheetName) ?? [];
       const availableDataSheetNames = dataSheetNames.filter(sheetName => unusedDataSheetNames.has(sheetName));
       const rankedDataSheetName = findMatchingDataSheet(templateSheetName, availableDataSheetNames);
       const fallbackDataSheetName = availableDataSheetNames[index] ?? availableDataSheetNames[0] ?? null;
-      const dataSheetName = rankedDataSheetName ?? fallbackDataSheetName;
+      const matchedExternalDataSheetName = rankedDataSheetName ?? fallbackDataSheetName;
+      const dataSheetName = inlineDataRows.length > 0 ? templateSheetName : matchedExternalDataSheetName;
 
       mappingConfigs[templateSheetName] = rules;
       entityDataSheetNames[templateSheetName] = dataSheetName ?? '';
-      excelData[templateSheetName] = dataSheetName
-        ? (worksheetRowsByName.get(dataSheetName) ?? [])
-        : [];
+      excelData[templateSheetName] = inlineDataRows.length > 0
+        ? inlineDataRows
+        : dataSheetName
+          ? (worksheetRowsByName.get(dataSheetName) ?? [])
+          : [];
 
-      if (dataSheetName) {
-        unusedDataSheetNames.delete(dataSheetName);
+      if (excelData[templateSheetName].length > 0) {
+        hasAnyResolvedDataRows = true;
+      }
+
+      if (matchedExternalDataSheetName) {
+        unusedDataSheetNames.delete(matchedExternalDataSheetName);
       }
     });
 
@@ -415,25 +655,31 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
       excelData,
       mappingConfigs,
       entityDataSheetNames,
+      mode: hasAnyResolvedDataRows ? 'mapping' : 'mapping_only',
     };
   }
 
-  const entityNames = workbook.SheetNames.filter(name => !name.toLowerCase().includes('sheet'));
-  const finalEntityNames = entityNames.length > 0 ? entityNames : workbook.SheetNames;
+  if (options?.allowDataOnly) {
+    const entityNames = workbook.SheetNames.filter(name => !name.toLowerCase().includes('sheet'));
+    const finalEntityNames = entityNames.length > 0 ? entityNames : workbook.SheetNames;
 
-  finalEntityNames.forEach(entityName => {
-    const rows = worksheetRowsByName.get(entityName) ?? [];
-    mappingConfigs[entityName] = rows as MappingRule[];
-    excelData[entityName] = rows;
-    entityDataSheetNames[entityName] = entityName;
-  });
+    finalEntityNames.forEach(entityName => {
+      const rows = worksheetRowsByName.get(entityName) ?? [];
+      mappingConfigs[entityName] = [];
+      excelData[entityName] = rows;
+      entityDataSheetNames[entityName] = entityName;
+    });
 
-  return {
-    entityNames: finalEntityNames,
-    excelData,
-    mappingConfigs,
-    entityDataSheetNames,
-  };
+    return {
+      entityNames: finalEntityNames,
+      excelData,
+      mappingConfigs,
+      entityDataSheetNames,
+      mode: 'data_only',
+    };
+  }
+
+  throw new Error('No mapping section found. Add a top section with ColumnOrder, HDL, and Input Column Name above the data table.');
 }
 
 export function buildDatContent(sheetData: ExcelRow[], sheetConfig: MappingRule[]): string {

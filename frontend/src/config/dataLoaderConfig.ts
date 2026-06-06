@@ -34,6 +34,21 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
         loadTitle: 'Workforce Structure',
         loadInstructions: 'Manage the HCM Data Loader lifecycle for each workforce structure entity. Please load the objects in the displayed order to prevent data dependency errors.',
         defaultEntities: ['Location', 'Job', 'Department', 'Grade'],
+        autoMappingTemplates: [
+          {
+            entityPatterns: ['worker'],
+            headerPrefix: ['METADATA', 'PersonEmail'],
+            dataPrefix: ['MERGE', 'PersonEmail'],
+            columns: [
+              { outputField: 'DateFrom', sourceAliases: ['Start Date', 'Date From', 'DateFrom'], required: true },
+              { outputField: 'DateTo', sourceAliases: ['End Date', 'Date To', 'DateTo'], required: true },
+              { outputField: 'PersonNumber', sourceAliases: ['Person Number', 'PersonNumber'], required: true },
+              { outputField: 'EmailType', sourceAliases: ['Email Type', 'EmailType'], required: true },
+              { outputField: 'EmailAddress', sourceAliases: ['Email Address', 'EmailAddress'], required: true },
+              { outputField: 'PrimaryFlag', sourceAliases: ['Primary Flag', 'PrimaryFlag'], required: true },
+            ],
+          },
+        ],
       },
       {
         key: 'worker',
@@ -43,6 +58,21 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
         loadTitle: 'Worker',
         loadInstructions: 'Prepare and submit worker-related entities after the required foundation data has already been loaded.',
         defaultEntities: ['Worker'],
+        autoMappingTemplates: [
+          {
+            entityPatterns: ['worker'],
+            headerPrefix: ['METADATA', 'PersonEmail'],
+            dataPrefix: ['MERGE', 'PersonEmail'],
+            columns: [
+              { outputField: 'DateFrom', sourceAliases: ['Start Date', 'Date From', 'DateFrom'], required: true },
+              { outputField: 'DateTo', sourceAliases: ['End Date', 'Date To', 'DateTo'], required: true },
+              { outputField: 'PersonNumber', sourceAliases: ['Person Number', 'PersonNumber'], required: true },
+              { outputField: 'EmailType', sourceAliases: ['Email Type', 'EmailType'], required: true },
+              { outputField: 'EmailAddress', sourceAliases: ['Email Address', 'EmailAddress'], required: true },
+              { outputField: 'PrimaryFlag', sourceAliases: ['Primary Flag', 'PrimaryFlag'], required: true },
+            ],
+          },
+        ],
       },
       {
         key: 'salary',
