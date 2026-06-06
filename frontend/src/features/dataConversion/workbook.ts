@@ -2,6 +2,8 @@ import * as XLSX from 'xlsx';
 
 import type { Entity, ExcelRow, MappingRule, ParsedWorkbookData } from '@/features/dataConversion/types';
 
+const TEMPLATE_REQUIRED_HEADERS = ['columnorder', 'hdl', 'inputcolumnname'];
+
 function normalizeEntityId(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '_');
 }
@@ -202,15 +204,45 @@ function tokenizeSheetName(value: string): string[] {
     ].includes(token));
 }
 
-function isTemplateSheet(rows: ExcelRow[]): boolean {
-  if (rows.length === 0) {
-    return false;
+function getWorksheetMatrix(worksheet: XLSX.WorkSheet): unknown[][] {
+  return XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    raw: false,
+    dateNF: 'yyyy-mm-dd',
+    defval: '',
+    blankrows: false,
+  });
+}
+
+function findTemplateHeaderRowIndex(matrix: unknown[][]): number | null {
+  for (let index = 0; index < matrix.length; index += 1) {
+    const normalizedRow = (matrix[index] ?? []).map(normalizeHeader);
+    const hasTemplateHeaders = TEMPLATE_REQUIRED_HEADERS.every(header => normalizedRow.includes(header));
+
+    if (hasTemplateHeaders) {
+      return index;
+    }
   }
 
-  const headers = Object.keys(rows[0] ?? {}).map(normalizeHeader);
-  const requiredHeaders = ['columnorder', 'hdl', 'inputcolumnname'];
+  return null;
+}
 
-  return requiredHeaders.every(header => headers.includes(header));
+function parseTemplateWorksheetRows(worksheet: XLSX.WorkSheet): MappingRule[] | null {
+  const matrix = getWorksheetMatrix(worksheet);
+  const headerRowIndex = findTemplateHeaderRowIndex(matrix);
+
+  if (headerRowIndex === null) {
+    return null;
+  }
+
+  const rows = XLSX.utils.sheet_to_json<MappingRule>(worksheet, {
+    range: headerRowIndex,
+    defval: '',
+    raw: false,
+    dateNF: 'yyyy-mm-dd',
+  });
+
+  return rows.length > 0 ? rows : null;
 }
 
 function parseWorksheetRows<T extends Record<string, unknown>>(worksheet: XLSX.WorkSheet): T[] {
@@ -332,6 +364,7 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
   const templateSheetNames: string[] = [];
   const dataSheetNames: string[] = [];
   const worksheetRowsByName = new Map<string, ExcelRow[]>();
+  const templateRowsByName = new Map<string, MappingRule[]>();
 
   workbook.SheetNames.forEach(sheetName => {
     const worksheet = workbook.Sheets[sheetName];
@@ -339,13 +372,15 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
       return;
     }
 
-    const rows = parseWorksheetRows<ExcelRow>(worksheet);
-    worksheetRowsByName.set(sheetName, rows);
-
-    if (isTemplateSheet(rows)) {
+    const templateRows = parseTemplateWorksheetRows(worksheet);
+    if (templateRows) {
+      templateRowsByName.set(sheetName, templateRows);
       templateSheetNames.push(sheetName);
       return;
     }
+
+    const rows = parseWorksheetRows<ExcelRow>(worksheet);
+    worksheetRowsByName.set(sheetName, rows);
 
     dataSheetNames.push(sheetName);
   });
@@ -358,7 +393,7 @@ export async function parseWorkbookForConversion(file: File): Promise<ParsedWork
     const unusedDataSheetNames = new Set(dataSheetNames);
 
     templateSheetNames.forEach((templateSheetName, index) => {
-      const rules = (worksheetRowsByName.get(templateSheetName) ?? []) as MappingRule[];
+      const rules = templateRowsByName.get(templateSheetName) ?? [];
       const availableDataSheetNames = dataSheetNames.filter(sheetName => unusedDataSheetNames.has(sheetName));
       const rankedDataSheetName = findMatchingDataSheet(templateSheetName, availableDataSheetNames);
       const fallbackDataSheetName = availableDataSheetNames[index] ?? availableDataSheetNames[0] ?? null;

@@ -729,7 +729,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                 })}
               </div>
 
-              {activePreviewEntity && activePreviewOutput && (
+              {activePreviewEntity && activePreviewOutput !== null && activePreviewOutput !== undefined && (
                 <div className="mt-6 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/60 overflow-hidden">
                   <div className="flex flex-col gap-2 border-b border-slate-200 dark:border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -751,7 +751,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                     </div>
                   </div>
                   <pre className="max-h-[320px] overflow-auto px-5 py-4 text-xs leading-6 text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 whitespace-pre-wrap break-all">
-                    {activePreviewOutput}
+                    {activePreviewOutput.trim() ? activePreviewOutput : 'No DAT lines were generated for this sheet.'}
                   </pre>
                 </div>
               )}
