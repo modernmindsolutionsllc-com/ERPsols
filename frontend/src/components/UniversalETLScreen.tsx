@@ -814,7 +814,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
         {/* STEP 3: Load to Oracle (Entity Lifecycle Management) */}
         {currentStep === 'load' && (
           <div className="p-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">
                   Deploy & Load to Oracle Cloud
@@ -823,13 +823,6 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                   Perform granular lifecycle management for all target HCM entities.
                 </p>
               </div>
-              <button
-                onClick={handleReset}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all hover:shadow-sm"
-              >
-                <Upload size={14} />
-                Upload Another File
-              </button>
             </div>
 
             <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl p-6 shadow-sm">
