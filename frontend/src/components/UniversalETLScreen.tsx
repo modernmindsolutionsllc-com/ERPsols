@@ -52,12 +52,10 @@ const STEPS: { key: ETLStep; label: string; icon: typeof Upload }[] = [
 ];
 
 function getDefaultEntityNames(object: BusinessObject): string[] {
-  if (object.databaseMappings && object.databaseMappings.length > 0) {
-    return object.databaseMappings.map(mapping => mapping.entityName);
-  }
-
   return object.defaultEntities && object.defaultEntities.length > 0
     ? object.defaultEntities
+    : object.databaseMappings && object.databaseMappings.length > 0
+      ? object.databaseMappings.map(mapping => mapping.entityName)
     : [object.label];
 }
 

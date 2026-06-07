@@ -34,6 +34,12 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
         loadTitle: 'Workforce Structure',
         loadInstructions: 'Manage the HCM Data Loader lifecycle for each workforce structure entity. Please load the objects in the displayed order to prevent data dependency errors.',
         defaultEntities: ['Location', 'Job', 'Department', 'Grade'],
+        databaseMappings: [
+          {
+            entityName: 'Bank',
+            tableName: 'Bank',
+          },
+        ],
         autoMappingTemplates: [
           {
             entityPatterns: ['worker'],
