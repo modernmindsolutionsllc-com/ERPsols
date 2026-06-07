@@ -48,6 +48,11 @@ export interface ResolvedAutoMappingField {
   status: 'mapped' | 'fixed' | 'missing';
 }
 
+export interface DatabaseMappingSource {
+  entityName: string;
+  tableName: string;
+}
+
 export interface BusinessObject {
   key: string;
   label: string;
@@ -57,6 +62,7 @@ export interface BusinessObject {
   loadInstructions?: string;
   defaultEntities?: string[];
   autoMappingTemplates?: AutoMappingTemplate[];
+  databaseMappings?: DatabaseMappingSource[];
 }
 
 export interface ModuleConfig {

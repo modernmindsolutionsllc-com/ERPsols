@@ -139,6 +139,12 @@ export const DATA_LOADER_CONFIG: ModuleConfig[] = [
         loadTitle: 'Bank & Bank Branch',
         loadInstructions: 'Create bank entities in sequence so branch definitions exist before any dependent payment configurations are loaded.',
         defaultEntities: ['Bank', 'Bank Branch'],
+        databaseMappings: [
+          {
+            entityName: 'Bank',
+            tableName: 'Bank',
+          },
+        ],
       },
       {
         key: 'payroll_time_card',

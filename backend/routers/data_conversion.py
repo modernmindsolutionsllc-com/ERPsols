@@ -9,10 +9,15 @@ and returns a sanitised preview. All endpoints are gated behind
 """
 
 import io
+import re
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
+from database import get_db
 from dependencies import require_tool_access
 
 
@@ -24,6 +29,7 @@ router = APIRouter(
 
 # Allowed file extensions
 _ALLOWED_EXTENSIONS = {".csv", ".json"}
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _get_extension(filename: str | None) -> str:
@@ -40,6 +46,43 @@ def _get_extension(filename: str | None) -> str:
             detail="File has no extension. Allowed: .csv, .json",
         )
     return filename[dot_index:].lower()
+
+
+@router.get("/mappings/{table_name}")
+def get_mapping_rows(
+    table_name: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch row-based HDL mapping rules from a Supabase/Postgres table.
+    """
+    if not _SAFE_IDENTIFIER_RE.fullmatch(table_name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid mapping table name.",
+        )
+
+    try:
+        result = db.execute(
+            text(
+                f'SELECT "ColumnOrder", "HDL", "InputColumnName" '
+                f'FROM public."{table_name}"'
+            )
+        )
+        rows = [dict(row) for row in result.mappings().all()]
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Mapping table '{table_name}' could not be read.",
+        ) from exc
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Mapping table '{table_name}' has no rows.",
+        )
+
+    return rows
 
 
 # ── POST /upload ───────────────────────────────────────────────────────────────

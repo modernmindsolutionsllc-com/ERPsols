@@ -725,7 +725,17 @@ export async function downloadEntityArchive(entityName: string, datContent: stri
   const url = URL.createObjectURL(archive);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `${entityName}.zip`;
+  const now = new Date();
+  const timestamp = [
+    now.getFullYear().toString(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('') + '_' + [
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0'),
+  ].join('');
+  anchor.download = `${entityName}_${timestamp}.zip`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
