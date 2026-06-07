@@ -59,6 +59,24 @@ function getDefaultEntityNames(object: BusinessObject): string[] {
     : [object.label];
 }
 
+function mergeEntityNames(primary: string[], secondary: string[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  [...primary, ...secondary].forEach(name => {
+    const trimmed = name.trim();
+    const normalized = normalizeHeader(trimmed);
+    if (!trimmed || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    merged.push(trimmed);
+  });
+
+  return merged;
+}
+
 function collectWorkbookSheets(parsedWorkbook: ParsedWorkbookData): WorkbookSheetData[] {
   const seen = new Set<string>();
   const sheets: WorkbookSheetData[] = [];
@@ -315,7 +333,12 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
         setMappingConfigs(effectiveMappingConfigs);
         setEntityDataSheetNames(effectiveDataSheetNames);
         setEntityTableNames(effectiveTableNames);
-        setDynamicEntities(configuredDatabaseMappings.map(mapping => mapping.entityName));
+        setDynamicEntities(
+          mergeEntityNames(
+            getDefaultEntityNames(object),
+            configuredDatabaseMappings.map(mapping => mapping.entityName),
+          ),
+        );
         setTotalRecords(computedTotalRecords);
         setPassedRecords(computedPassedRecords);
         setValidationReportContent(reportLines.join('\n'));
