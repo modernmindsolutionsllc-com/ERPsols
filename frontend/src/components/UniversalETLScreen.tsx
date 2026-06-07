@@ -868,9 +868,6 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                   const isPending = entity.lifecycleState === 'pending';
                   const isPrepared = entity.lifecycleState === 'prepared';
                   const isSubmitted = entity.lifecycleState === 'submitted';
-                  const matchedDataSheetName = entityDataSheetNames[entity.name];
-                  const matchedRowCount = excelData[entity.name]?.length ?? 0;
-                  const mappingTableName = entityTableNames[entity.name];
 
                   return (
                     <div
@@ -886,11 +883,6 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                           <span className="font-semibold text-slate-800 dark:text-slate-200">
                             {entity.name}
                           </span>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {matchedDataSheetName
-                              ? `${mappingTableName ? `Table: ${mappingTableName} | ` : ''}Data sheet: ${matchedDataSheetName} | Rows found: ${matchedRowCount}`
-                              : 'No data sheet matched yet'}
-                          </p>
                         </div>
                       </div>
 
@@ -945,7 +937,7 @@ export function UniversalETLScreen({ module, object, onBack }: UniversalETLScree
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700/50'
                           }`}
                         >
-                          <span>Preview Output</span>
+                          <span>Status</span>
                         </button>
                       </div>
                     </div>
